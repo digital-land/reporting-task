@@ -6,6 +6,9 @@ RUN apt-get update
 RUN apt-get upgrade -y
 RUN apt-get install -y curl git make sqlite3 sudo gdal-bin time libsqlite3-mod-spatialite wget
 
+COPY . /src
+WORKDIR /src
+
 RUN pip install pyproj
 RUN pip install awscli
 RUN pip install --upgrade pip
