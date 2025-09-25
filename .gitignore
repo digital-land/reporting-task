@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+.ipynb_checkpoints/
+.venv
+.cache
+.dummy
+
+*.swp
+
+tmp/
+
+# ignore local packages
+*.egg-info/
+
+# ignore data directorry
+data/
