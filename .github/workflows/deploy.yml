@@ -1,7 +1,9 @@
 name: Publish
+run-name: Publish - ${{ github.head_ref || github.ref_name }} to ${{ inputs.environment || 'all' }} by @${{ github.actor }}
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -34,7 +36,6 @@ jobs:
       matrix:
         environment: ${{ fromJSON(needs.detect-environments.outputs.environments) }}
     environment: ${{ matrix.environment }}
-    if: github.ref_name == 'main'
     steps:
       - uses: actions/checkout@v4
 
