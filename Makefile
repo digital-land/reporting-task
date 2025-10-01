@@ -53,6 +53,12 @@ data/reporting/odp-conformance.csv:
 # data/reporting/operational-issues.csv: data/reporting
 # 	python src/operational_issues.py --output-dir data/reporting
 
+data/reporting/entities_with_ended_orgs.csv:
+	python src/monitoring_entities_ended_orgs.py --output-dir data/reporting
+
+data/reporting/ended_orgs_active_endpoints.csv:
+	python src/monitoring_active_endpoints_ended_orgs.py --output-dir data/reporting
+
 data/reporting/runaway_resources.csv: data/reporting
 	python src/runaway_resources.py --output-dir data/reporting
 
@@ -66,4 +72,6 @@ all: data/reporting/duplicate_entity_expectation.csv \
 	data/reporting/odp-status.csv \
 	data/reporting/logs-by-week.csv \
 	data/reporting/runaway_resources.csv\
-	data/reporting/odp-conformance.csv
+	data/reporting/odp-conformance.csv\
+	data/reporting/entities_with_ended_orgs.csv\
+	data/reporting/ended_orgs_active_endpoints.csv
