@@ -16,6 +16,10 @@ init ::
 	pip install --upgrade pip
 	pip3 install --upgrade -r requirements.txt
 
+
+make clobber:
+	rm -rf data/reporting
+
 data/reporting:
 	mkdir -p data/reporting
 
