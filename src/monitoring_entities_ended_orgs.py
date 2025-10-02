@@ -53,7 +53,7 @@ def chunked(iterable, size):
         yield chunk
 
 
-def get_all_dataset_slugs(base_db: str = BASE_DB) -> list[str]:
+def get_all_dataset_slugs(base_db: str = BASE_DB) -> list:
     """
     Pull dataset slugs from the dataset registry table.
     (This lists all registered datasets—even if they don't have an entity table.)
