@@ -11,12 +11,6 @@ init::;
 	test-unit \
 	test-acceptance
 
-
-init ::
-	pip install --upgrade pip
-	pip3 install --upgrade -r requirements.txt
-
-
 make clobber:
 	rm -rf data/reporting
 
