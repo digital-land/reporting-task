@@ -2,22 +2,25 @@ import pandas as pd
 import ast
 import argparse
 import os
+import logging
+logger = logging.getLogger(__name__)
 
+FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # Load expectations table
 EXPECTATIONS_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.csv?_stream=on"
 
 # Entity tables to enrich A/B sides
 ENTITY_URLS = {
-    "conservation-area": "https://datasette.planning.data.gov.uk/conservation-area/entity.csv?_stream=on",
-    "article-4-direction-area": "https://datasette.planning.data.gov.uk/article-4-direction-area/entity.csv?_stream=on",
-    "listed-building-outline": "https://datasette.planning.data.gov.uk/listed-building-outline/entity.csv?_stream=on",
-    "tree-preservation-zone": "https://datasette.planning.data.gov.uk/tree-preservation-zone/entity.csv?_stream=on",
-    "tree": "https://datasette.planning.data.gov.uk/tree/entity.csv?_stream=on",
+    "conservation-area": f"{FILES_URL}/dataset/conservation-area.parquet",
+    "article-4-direction-area": f"{FILES_URL}/dataset/article-4-direction-area.parquet",
+    "listed-building-outline": f"{FILES_URL}/dataset/listed-building-outline.parquet",
+    "tree-preservation-zone": f"{FILES_URL}/dataset/tree-preservation-zone.parquet",
+    "tree": f"{FILES_URL}/dataset/tree.parquet",
 }
 
 # Orgs lookup
-ORGS_URL = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
+ORGS_URL = "https://files.planning.data.gov.uk/organisation-collection/dataset/organisation.csv"
 
 
 def parse_details(val):
@@ -98,17 +101,22 @@ def main(output_dir: str):
     ]
     entity_tbls = []
     for dataset_name, entity_url in ENTITY_URLS.items():
-        t = pd.read_csv(entity_url, low_memory=False)
-        # Ensure required columns exist (skip missing datasets)
-        missing = [c for c in ["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity"] if c not in t.columns]
-        if missing:
-            continue
-        t = t[["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity"]].copy()
-        t["dataset"] = dataset_name
-        # Normalize key types
-        t["entity"] = pd.to_numeric(t["entity"], errors="coerce").astype("Int64")
-        t["organisation_entity"] = pd.to_numeric(t["organisation_entity"], errors="coerce").astype("Int64")
-        entity_tbls.append(t[cols].copy())
+        try:
+            t = pd.read_parquet(entity_url)
+            t.columns = t.columns.str.replace('-', '_')
+            # Ensure required columns exist (skip missing datasets)
+            missing = [c for c in ["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity"] if c not in t.columns]
+            if missing:
+                continue
+            t = t[["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity","dataset"]]
+            # Normalize key types almost like you could do this on import
+            t["entity"] = pd.to_numeric(t["entity"], errors="coerce").astype("Int64")
+            t["organisation_entity"] = pd.to_numeric(t["organisation_entity"], errors="coerce").astype("Int64")
+            entity_tbls.append(t[cols].copy())
+        except Exception as e:
+            logger.error(f"Failed to load entity table for dataset: {dataset_name} from {entity_url}")
+            raise e
+
 
     if not entity_tbls:
         # No enrichment possible, just save what we have
