@@ -97,7 +97,7 @@ def get_provisions(selected_cohorts, all_cohorts):
     filtered_cohorts = [
         x
         for x in selected_cohorts
-        if selected_cohorts[0] in [cohort["id"] for cohort in all_cohorts]
+        if x in [cohort["id"] for cohort in all_cohorts]
     ]
     cohort_clause = (
         "AND ("
@@ -165,10 +165,12 @@ DATASET_TYPES = [
 COHORTS = [
     {"name": "RIPA Beta", "id": "RIPA-Beta"},
     {"name": "RIPA BOPS", "id": "RIPA-BOPS"},
-    {"name": "ODP Track 1", "id": "ODP-Track1"},
-    {"name": "ODP Track 2", "id": "ODP-Track2"},
-    {"name": "ODP Track 3", "id": "ODP-Track3"},
-    {"name": "ODP Track 4", "id": "ODP-Track4"},
+    {"name": "PSIF Track 1", "id": "psif-Track1"},
+    {"name": "PSIF Track 2", "id": "psif-Track2"},
+    {"name": "PSIF Track 3", "id": "psif-Track3"},
+    {"name": "DPIF Round 2", "id": "dpif-round-2"},
+    {"name": "DPIF Round 3", "id": "dpif-round-3"},
+    {"name": "DPIF Round 4.1", "id": "dpif-round-4.1"},
 ]
 
 
