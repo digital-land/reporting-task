@@ -2,9 +2,7 @@
 
 [![License](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/digital-land/digital-land-builder/blob/master/LICENSE)
 
-builds a set of csvs and stores them into the collection data bucket under reporting. These csvs intended purpose are to be used for reporting by the Collecting and management team. All data will be publicaly accessible `from files.planning.data.gov.uk/reporting`
-
-
+builds a set of csvs and stores them into the collection data bucket under reporting. These csvs intended purpose are to be used for reporting by the Collecting and management team. All data will be publicly accessible `from files.planning.data.gov.uk/reporting`
 
 # Licence
 
