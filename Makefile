@@ -17,6 +17,9 @@ make clobber:
 data/reporting:
 	mkdir -p data/reporting
 
+data/reporting/deleted_entities.csv: data/reporting
+	python src/check_deleted_entities.py --output-dir data/reporting
+
 data/reporting/duplicate_entity_expectation.csv: data/reporting
 	python src/duplicate_geometry_expectations.py --output-dir data/reporting
 
@@ -61,7 +64,8 @@ data/reporting/runaway_resources.csv: data/reporting
 	python src/runaway_resources.py --output-dir data/reporting
 
 .PHONY: all
-all: data/reporting/duplicate_entity_expectation.csv \
+all: data/reporting/deleted_entities.csv \
+	data/reporting/duplicate_entity_expectation.csv \
 	data/reporting/endpoint-dataset-issue-type-summary.csv \
 	data/reporting/all-endpoints-and-documentation-urls.csv \
 	data/reporting/flag_endpoints_no_provision.csv \
