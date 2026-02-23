@@ -15,6 +15,14 @@ Builds a set of CSVs and stores them into the collection data bucket under repor
 
 Each Python script in `src/` can be run individually with `python src/script_name.py --output-dir <directory>` (or `python3` depending on your system setup). Note: if `make all` fails with "python: No such file or directory", your system requires `python3` - edit the Makefile locally to replace `python` with `python3`.
 
+## Deploying New Scripts
+
+To deploy a new reporting script:
+
+1. Create a pull request with your script and documentation
+2. Get code review approval from a team member
+3. Once merged, an **infrastructure-deployer** team member must approve the GitHub Actions workflow to deploy the changes
+
 ## Licence
 
 The software in this project is open source and covered by the [LICENSE](LICENSE) file.
