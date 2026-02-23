@@ -2,9 +2,20 @@
 
 [![License](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/digital-land/digital-land-builder/blob/master/LICENSE)
 
-builds a set of csvs and stores them into the collection data bucket under reporting. These csvs intended purpose are to be used for reporting by the Collecting and management team. All data will be publicly accessible `from files.planning.data.gov.uk/reporting`
+Builds a set of CSVs and stores them into the collection data bucket under reporting. These CSVs are intended for reporting by the Collection and Management team. All data will be publicly accessible from `files.planning.data.gov.uk/reporting`.
 
-# Licence
+## Repository Structure
+
+- **`src/`** - Python scripts that generate reporting datasets
+- **`data/reporting/`** - Output directory for generated CSV files
+- **`Makefile`** - Build targets for each report (run `make all` to generate all reports, or `make <target>` for individual reports)
+- **`requirements.txt`** - Python dependencies
+- **`run.sh`** - Shell script for containerized execution
+- **`Dockerfile`** - Container configuration
+
+Each Python script in `src/` can be run individually with `python src/script_name.py --output-dir <directory>` (or `python3` depending on your system setup). Note: if `make all` fails with "python: No such file or directory", your system requires `python3` - edit the Makefile locally to replace `python` with `python3`.
+
+## Licence
 
 The software in this project is open source and covered by the [LICENSE](LICENSE) file.
 
