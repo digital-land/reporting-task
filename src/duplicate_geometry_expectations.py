@@ -20,13 +20,13 @@ ENTITY_URLS = {
 }
 
 # Orgs lookup
-ORGS_URL = "https://files.planning.data.gov.uk/organisation-collection/dataset/organisation.csv"
+ORGS_URL = f"{FILES_URL}/organisation-collection/dataset/organisation.csv"
 LOOKUP_URLS = {
-    "conservation-area": "https://raw.githubusercontent.com/digital-land/config/refs/heads/main/pipeline/conservation-area/lookup.csv",
-    "article-4-direction-area": "https://raw.githubusercontent.com/digital-land/config/refs/heads/main/pipeline/article-4-direction/lookup.csv",
-    "listed-building-outline": "https://raw.githubusercontent.com/digital-land/config/refs/heads/main/pipeline/listed-building/lookup.csv",
-    "tree-preservation-zone": "https://raw.githubusercontent.com/digital-land/config/refs/heads/main/pipeline/tree-preservation-order/lookup.csv",
-    "tree": "https://raw.githubusercontent.com/digital-land/config/refs/heads/main/pipeline/tree-preservation-order/lookup.csv",
+    "conservation-area": f"{FILES_URL}/config/pipeline/conservation-area/lookup.csv",
+    "article-4-direction-area": f"{FILES_URL}/config/pipeline/article-4-direction/lookup.csv",
+    "listed-building-outline": f"{FILES_URL}/config/pipeline/listed-building/lookup.csv",
+    "tree-preservation-zone": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
+    "tree": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
 }
 
 # Load provision table to check if LPA is in ODP
