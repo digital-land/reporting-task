@@ -20,7 +20,17 @@ ENTITY_URLS = {
 }
 
 # Orgs lookup
-ORGS_URL = "https://files.planning.data.gov.uk/organisation-collection/dataset/organisation.csv"
+ORGS_URL = f"{FILES_URL}/organisation-collection/dataset/organisation.csv"
+LOOKUP_URLS = {
+    "conservation-area": f"{FILES_URL}/config/pipeline/conservation-area/lookup.csv",
+    "article-4-direction-area": f"{FILES_URL}/config/pipeline/article-4-direction/lookup.csv",
+    "listed-building-outline": f"{FILES_URL}/config/pipeline/listed-building/lookup.csv",
+    "tree-preservation-zone": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
+    "tree": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
+}
+
+# Load provision table to check if LPA is in ODP
+ODP_URL = "https://datasette.planning.data.gov.uk/digital-land/provision.csv?_stream=on"
 
 
 def parse_details(val):
@@ -202,6 +212,46 @@ def main(output_dir: str):
     )
 
     # ------------------------------------------------------------
+    # Merge in organisations from lookup
+    # ------------------------------------------------------------
+    # Get unique datasets that have matches
+    datasets_in_matches = df_matches["dataset"].unique()
+
+    # Process each dataset separately
+    results = []
+    for dataset in datasets_in_matches:
+        df_subset = df_matches[df_matches["dataset"] == dataset].copy()
+        
+        # Load the appropriate lookup for this dataset
+        if dataset in LOOKUP_URLS:
+            try:
+                df_lookup = pd.read_csv(LOOKUP_URLS[dataset])
+                df_lookup = df_lookup[["organisation", "entity"]].drop_duplicates(subset=["entity"], keep="first").copy()
+                
+                # Merge for entity_a
+                df_subset = df_subset.merge(
+                    df_lookup.rename(columns={"organisation": "lookup-org-a"}),
+                    how="left",
+                    left_on="entity_a",
+                    right_on="entity",
+                    validate="m:1",
+                )
+                # Merge for entity_b
+                df_subset = df_subset.merge(
+                    df_lookup.rename(columns={"organisation": "lookup-org-b"}),
+                    how="left",
+                    left_on="entity_b",
+                    right_on="entity",
+                    validate="m:1",
+                )
+            except Exception as e:
+                logger.error(f"Failed to load lookup for {dataset}: {e}")
+        
+        results.append(df_subset)
+
+    df_matches = pd.concat(results, ignore_index=True)
+
+    # ------------------------------------------------------------
     # Clean up helper columns if present
     # ------------------------------------------------------------
     drop_cols = [
@@ -213,6 +263,23 @@ def main(output_dir: str):
     for c in drop_cols:
         if c in df_matches.columns:
             df_matches.drop(columns=[c], inplace=True)
+
+    # ------------------------------------------------------------
+    # Create comparison column
+    # ------------------------------------------------------------
+    df_matches["lookup-same-org"] = df_matches["lookup-org-a"] == df_matches["lookup-org-b"]
+
+    # ------------------------------------------------------------
+    # Check if entity B organisation is in ODP
+    # ------------------------------------------------------------
+    try:
+        df_provision = pd.read_csv(ODP_URL, low_memory=False)
+        # Get organisations that are in the open-digital-planning project
+        odp_orgs = set(df_provision[df_provision["project"] == "open-digital-planning"]["organisation"].unique())
+        df_matches["in-odp"] = df_matches["lookup-org-b"].isin(odp_orgs)
+    except Exception as e:
+        logger.error(f"Failed to load ODP provision data: {e}")
+        df_matches["in-odp"] = False
 
     # ------------------------------------------------------------
     # Final column order (only keep those that exist)
@@ -235,9 +302,12 @@ def main(output_dir: str):
         "entity_b_entry_date",
         "entity_b_end_date",
         "entity_b_geometry",
-        # keep originals for auditing
-        "organisation_entity_a",
-        "organisation_entity_b",
+        "organisation_entity_a", # keep originals for auditing
+        "organisation_entity_b", # keep originals for auditing
+        "lookup-org-a",
+        "lookup-org-b",
+        "lookup-same-org",
+        "in-odp"
     ]
     ordered = [c for c in ordered if c in df_matches.columns]
     df_matches = df_matches[ordered].copy()
