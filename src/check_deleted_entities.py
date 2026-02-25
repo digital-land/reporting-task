@@ -2,13 +2,14 @@ import pandas as pd
 import json
 import os
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
 FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # URLs for data sources
-ENDPOINT_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.csv?_sort=rowid&passed__exact=False&operation__exact=count_deleted_entities"
+ENDPOINT_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.json?passed__exact=False&operation__exact=count_deleted_entities&_sort=rowid&_size=max"
 ORG_URL = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
 
 
@@ -20,7 +21,9 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     # Load and filter expectations
     # ---------------------------------------------------------------
-    df = pd.read_csv(ENDPOINT_URL)
+    response = requests.get(ENDPOINT_URL)
+    data = response.json()
+    df = pd.DataFrame(data['rows'], columns=data['columns'])
     df_filtered = df[['dataset', 'organisation', 'details']].copy()
 
     # Parse JSON and extract entities list
