@@ -46,6 +46,7 @@ def get_datasette_http():
 def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
     """
     Executes SQL against a Datasette database and returns the result as a DataFrame.
+    Handles pagination to retrieve all rows when the result set exceeds API limits.
 
     Args:
         db (str): The name of the Datasette database (e.g., 'digital-land').
@@ -56,13 +57,34 @@ def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.
         pd.DataFrame: The result set, or empty DataFrame on error.
     """
     full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
+    all_rows = []
+    offset = 0
+    batch_size = 1000
 
     try:
         http = get_datasette_http()
-        response = http.get(full_url, params=params)
-        response.raise_for_status()
-        return pd.DataFrame.from_dict(response.json())
+
+        while True:
+            # Add LIMIT and OFFSET to the query for pagination
+            paginated_sql = f"{sql} LIMIT {batch_size} OFFSET {offset}"
+            params = {"sql": paginated_sql, "_shape": "array"}
+
+            response = http.get(full_url, params=params)
+            response.raise_for_status()
+            batch = response.json()
+
+            if not batch:
+                break
+
+            all_rows.extend(batch)
+
+            # If we got fewer rows than the batch size, we've reached the end
+            if len(batch) < batch_size:
+                break
+
+            offset += batch_size
+
+        return pd.DataFrame.from_dict(all_rows)
     except Exception as e:
         print(f"Datasette query failed: {e}")
         return pd.DataFrame()
