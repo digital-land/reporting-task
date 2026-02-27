@@ -46,7 +46,6 @@ def get_datasette_http():
 def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
     """
     Executes SQL against a Datasette database and returns the result as a DataFrame.
-    Handles pagination to retrieve all rows when the result set exceeds API limits.
 
     Args:
         db (str): The name of the Datasette database (e.g., 'digital-land').
@@ -57,34 +56,13 @@ def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.
         pd.DataFrame: The result set, or empty DataFrame on error.
     """
     full_url = f"{url}/{db}.json"
-    all_rows = []
-    offset = 0
-    batch_size = 1000
+    params = {"sql": sql, "_shape": "array"}
 
     try:
         http = get_datasette_http()
-
-        while True:
-            # Add LIMIT and OFFSET to the query for pagination
-            paginated_sql = f"{sql} LIMIT {batch_size} OFFSET {offset}"
-            params = {"sql": paginated_sql, "_shape": "array"}
-
-            response = http.get(full_url, params=params)
-            response.raise_for_status()
-            batch = response.json()
-
-            if not batch:
-                break
-
-            all_rows.extend(batch)
-
-            # If we got fewer rows than the batch size, we've reached the end
-            if len(batch) < batch_size:
-                break
-
-            offset += batch_size
-
-        return pd.DataFrame.from_dict(all_rows)
+        response = http.get(full_url, params=params)
+        response.raise_for_status()
+        return pd.DataFrame.from_dict(response.json())
     except Exception as e:
         print(f"Datasette query failed: {e}")
         return pd.DataFrame()
@@ -114,14 +92,17 @@ def get_provisions():
     return get_datasette_query("digital-land", sql)
 
 
-def get_endpoints():
+def get_endpoints_chunk(offset: int) -> pd.DataFrame:
     """
-    Retrieves latest reporting data for all active endpoints.
+    Retrieves a paginated chunk of endpoint reporting data.
+
+    Args:
+        offset (int): Pagination offset for the query.
 
     Returns:
-        pd.DataFrame: Table of endpoint metadata and status.
+        pd.DataFrame: Chunk of endpoint data.
     """
-    sql = """
+    sql = f"""
         SELECT
             rle.organisation,
             rle.collection,
@@ -139,8 +120,34 @@ def get_endpoints():
             rle.resource_start_date,
             rle.resource_end_date
         FROM reporting_latest_endpoints rle
+        LIMIT 1000 OFFSET {offset}
     """
-    df = get_datasette_query("performance", sql)
+    return get_datasette_query("performance", sql)
+
+
+def get_endpoints() -> pd.DataFrame:
+    """
+    Retrieves all endpoint reporting data using pagination.
+
+    Returns:
+        pd.DataFrame: Combined table of all endpoint metadata and status.
+    """
+    df_list = []
+    offset = 0
+
+    while True:
+        chunk = get_endpoints_chunk(offset)
+        if chunk.empty:
+            break
+        df_list.append(chunk)
+        if len(chunk) < 1000:
+            break
+        offset += 1000
+
+    if not df_list:
+        return pd.DataFrame()
+
+    df = pd.concat(df_list, ignore_index=True)
 
     # Normalise organisation codes (remove -eng suffix)
     df["organisation"] = df["organisation"].str.replace("-eng", "", regex=False)
