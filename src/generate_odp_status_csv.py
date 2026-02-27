@@ -56,7 +56,7 @@ def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.
         pd.DataFrame: The result set, or empty DataFrame on error.
     """
     full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
+    params = {"sql": sql, "_shape": "array"}
 
     try:
         http = get_datasette_http()
@@ -92,14 +92,17 @@ def get_provisions():
     return get_datasette_query("digital-land", sql)
 
 
-def get_endpoints():
+def get_endpoints_chunk(offset: int) -> pd.DataFrame:
     """
-    Retrieves latest reporting data for all active endpoints.
+    Retrieves a paginated chunk of endpoint reporting data.
+
+    Args:
+        offset (int): Pagination offset for the query.
 
     Returns:
-        pd.DataFrame: Table of endpoint metadata and status.
+        pd.DataFrame: Chunk of endpoint data.
     """
-    sql = """
+    sql = f"""
         SELECT
             rle.organisation,
             rle.collection,
@@ -117,8 +120,34 @@ def get_endpoints():
             rle.resource_start_date,
             rle.resource_end_date
         FROM reporting_latest_endpoints rle
+        LIMIT 1000 OFFSET {offset}
     """
-    df = get_datasette_query("performance", sql)
+    return get_datasette_query("performance", sql)
+
+
+def get_endpoints() -> pd.DataFrame:
+    """
+    Retrieves all endpoint reporting data using pagination.
+
+    Returns:
+        pd.DataFrame: Combined table of all endpoint metadata and status.
+    """
+    df_list = []
+    offset = 0
+
+    while True:
+        chunk = get_endpoints_chunk(offset)
+        if chunk.empty:
+            break
+        df_list.append(chunk)
+        if len(chunk) < 1000:
+            break
+        offset += 1000
+
+    if not df_list:
+        return pd.DataFrame()
+
+    df = pd.concat(df_list, ignore_index=True)
 
     # Normalise organisation codes (remove -eng suffix)
     df["organisation"] = df["organisation"].str.replace("-eng", "", regex=False)
