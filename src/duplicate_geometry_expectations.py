@@ -318,7 +318,10 @@ def main(output_dir: str):
     # ------------------------------------------------------------
     os.makedirs(output_dir, exist_ok=True)
     out_csv = os.path.join(output_dir, "duplicate_entity_expectation.csv")
-    df_matches.to_csv(out_csv, index=False)
+    df_matches.drop(columns=["entity_a_geometry", "entity_b_geometry"]).to_csv(out_csv, index=False) # Geometry fields are large, so drop for report CSV
+
+    out_geog_csv = os.path.join(output_dir, "duplicate_entity_expectation_geographies.csv") # Keep geometry fields for geospatial analysis, but save separately
+    df_matches.to_csv(out_geog_csv, index=False)
 
 
 def parse_args():
