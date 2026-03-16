@@ -62,15 +62,15 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     df_merged = pd.merge(
         df_bo[["reference", "end-date"]],
-        df_bo_outline[["listed-building", "reference", "organisation-entity"]],
+        df_bo_outline[["listed-building", "reference", "entity", "organisation-entity"]],
         left_on="reference",
         right_on="listed-building",
         how="inner",
         suffixes=("_lb", "_lbo"),
     )
 
-    # Clean up columns
-    df_merged = df_merged[["reference_lbo", "organisation-entity", "end-date"]].rename(
+    # Clean up columns - keep entity from listed-building-outline
+    df_merged = df_merged[["reference_lbo", "entity", "organisation-entity", "end-date"]].rename(
         columns={"reference_lbo": "reference"}
     )
 
@@ -79,13 +79,12 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     try:
         df_org = pd.read_csv(ORG_URL)
-        df_org = df_org[["entity", "organisation"]].copy()
+        df_org = df_org[["entity", "organisation"]].rename(columns={"entity": "organisation-entity"}).copy()
 
         df_final = pd.merge(
             df_merged,
             df_org,
-            left_on="organisation-entity",
-            right_on="entity",
+            on="organisation-entity",
             how="left",
         )
     except Exception as e:
@@ -93,13 +92,14 @@ def main(output_dir: str):
         df_final = df_merged
 
     # ---------------------------------------------------------------
-    # Sort and save
+    # Filter to only rows with end dates, sort and save
     # ---------------------------------------------------------------
-    df_final = df_final.sort_values("organisation").drop(columns=["entity"])
+    df_final = df_final[df_final['end-date'].notna() & (df_final['end-date'] != '')]
+    df_final = df_final.sort_values("organisation")
 
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "listed-building-end-date.csv")
-    df_final[['reference', 'end-date', 'organisation-entity', 'organisation']].to_csv(output_file, index=False)
+    df_final[['reference', 'entity', 'end-date', 'organisation-entity', 'organisation']].to_csv(output_file, index=False)
     logger.info(f"Saved output to {output_file} with {len(df_final)} rows")
 
 
