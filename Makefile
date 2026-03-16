@@ -44,6 +44,9 @@ data/reporting/odp-issue.csv:
 data/reporting/odp-status.csv: 
 	python src/generate_odp_status_csv.py --output-dir data/reporting
 
+data/reporting/listed-building-end-date.csv:
+	python src/listed_building_end_date.py --output-dir data/reporting
+
 data/reporting/logs-by-week.csv:
 	python src/logs_by_week.py --output-dir data/reporting
 
@@ -72,6 +75,7 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/flagged_failed_resources.csv \
 	data/reporting/odp-issue.csv \
 	data/reporting/odp-status.csv \
+	data/reporting/listed-building-end-date.csv \
 	data/reporting/logs-by-week.csv \
 	data/reporting/runaway_resources.csv\
 	data/reporting/odp-conformance.csv\
