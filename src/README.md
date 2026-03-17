@@ -39,6 +39,26 @@ Extracts listed building end dates associated with organisations.
 
 ---
 
+### measure_odp_data_quality.py
+
+Generates ODP data quality reporting outputs for provider and dataset coverage.
+
+**What it does:**
+
+- Builds ODP quality scores for each provider across key datasets
+- Produces an LPA-by-dataset quality summary table
+- Produces a dataset quality criteria detail table by provider
+- Writes both reporting tables as CSV files
+
+**Outputs:**
+
+- `quality_ODP_dataset_scores_by_LPA.csv`
+- `quality_ODP_dataset_quality_detail.csv`
+
+**Run:** `python src/measure_odp_data_quality.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ## Adding New Scripts
 
 When creating a new reporting script, please add a brief description to this README following the format above. Include:

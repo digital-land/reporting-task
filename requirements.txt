@@ -6,6 +6,8 @@ csvkit
 chardet
 PyPDF2
 pandas
+geopandas
+shapely
 tqdm
 click
 pyarrow
