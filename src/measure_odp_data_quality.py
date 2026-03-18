@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import sqlite3
 import urllib.parse
-import urllib.request
 
 import geopandas as gpd
 import numpy as np
@@ -40,16 +38,25 @@ def datasette_query(db: str, sql: str) -> pd.DataFrame:
     return pd.read_csv(f"https://datasette.planning.data.gov.uk/{db}.csv?{params}")
 
 
-def query_sqlite(db_path: str, sql: str) -> pd.DataFrame:
-    with sqlite3.connect(db_path) as con:
-        cur = con.execute(sql)
-        cols = [c[0] for c in cur.description]
-        return pd.DataFrame.from_records(cur.fetchall(), columns=cols)
+def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.DataFrame:
+    frames = []
+    offset = 0
 
+    while True:
+        page_sql = f"{sql}\nLIMIT {page_size} OFFSET {offset}"
+        page_df = datasette_query(db, page_sql)
+        if page_df.empty:
+            break
 
-def download_performance_db(path: str) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    urllib.request.urlretrieve("https://datasette.planning.data.gov.uk/performance.db", path)
+        frames.append(page_df)
+
+        if len(page_df) < page_size:
+            break
+        offset += page_size
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def get_pdp_gdf(dataset: str, geometry_field: str) -> gpd.GeoDataFrame:
@@ -67,9 +74,6 @@ def main() -> None:
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    perf_db = os.path.join(output_dir, "_db_downloads", "performance.db")
-    download_performance_db(perf_db)
-
     issue_lookup = datasette_query(
         "digital-land",
         """
@@ -85,8 +89,8 @@ def main() -> None:
         "SELECT * FROM provision WHERE project = 'open-digital-planning'",
     ).rename(columns={"dataset": "pipeline"})
 
-    endpoint_issues = query_sqlite(
-        perf_db,
+    endpoint_issues = datasette_query_paginated(
+        "performance",
         """
         SELECT rhe.organisation,
                rhe.name AS organisation_name,
@@ -298,14 +302,6 @@ def main() -> None:
 
     print(f"Saved {out_scores} ({len(odp_lpa_summary_wide)} rows)")
     print(f"Saved {out_detail} ({len(odp_qual_summary)} rows)")
-
-    # Clean up temporary database download.
-    if os.path.exists(perf_db):
-        os.remove(perf_db)
-
-    perf_db_dir = os.path.dirname(perf_db)
-    if os.path.isdir(perf_db_dir) and not os.listdir(perf_db_dir):
-        os.rmdir(perf_db_dir)
 
 
 if __name__ == "__main__":
