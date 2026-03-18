@@ -52,6 +52,9 @@ data/reporting/logs-by-week.csv:
 
 data/reporting/odp-conformance.csv:
 	python src/generate_odp_conformance_csv.py --output-dir data/reporting --specification-dir data/specification
+
+data/reporting/quality_ODP_dataset_scores_by_LPA.csv data/reporting/quality_ODP_dataset_quality_detail.csv: data/reporting
+	python src/measure_odp_data_quality.py --output-dir data/reporting
 # src/operational_issues.py <- fix this one
 
 # data/reporting/operational-issues.csv: data/reporting
@@ -79,5 +82,7 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/logs-by-week.csv \
 	data/reporting/runaway_resources.csv\
 	data/reporting/odp-conformance.csv\
+	data/reporting/quality_ODP_dataset_scores_by_LPA.csv\
+	data/reporting/quality_ODP_dataset_quality_detail.csv\
 	data/reporting/entities_with_ended_orgs.csv\
 	data/reporting/ended_orgs_active_endpoints.csv
