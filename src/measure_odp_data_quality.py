@@ -261,6 +261,7 @@ def main() -> None:
         how="left",
         on="organisation",
     )
+    odp_lpa_summary_wide["ready_for_ODP_adoption"] = odp_lpa_summary_wide["ready_for_ODP_adoption"].fillna("no")
 
     qual_cat_count = qual_all.groupby(
         ["pipeline", "organisation", "organisation_name", "quality_criteria"],
@@ -294,7 +295,13 @@ def main() -> None:
         qual_cat_summary_wide["pipeline"].isin(ODP_DATASETS)
     ].copy()
 
-    qual_criteria_cols = [c for c in odp_qual_summary.columns if c not in ["pipeline", "organisation", "organisation_name", "quality_level_label"]]
+    odp_qual_summary = odp_qual_summary.merge(
+        provision[["organisation", "pipeline", "cohort", "start_date"]],
+        on=["organisation", "pipeline"],
+        how="left",
+    )
+
+    qual_criteria_cols = [c for c in odp_qual_summary.columns if c not in ["pipeline", "organisation", "organisation_name", "cohort", "start_date", "quality_level_label"]]
     flag_map = {True: "FALSE", False: "TRUE", 1: "FALSE", 0: "TRUE", 1.0: "FALSE", 0.0: "TRUE"}
     for col in qual_criteria_cols:
         odp_qual_summary[col] = odp_qual_summary[col].map(flag_map)
@@ -320,11 +327,11 @@ def main() -> None:
         odp_lpa_summary_wide = odp_lpa_summary_wide.sort_values(["cohort", "organisation_name"]).reset_index(drop=True)
 
     # Add missing org+pipeline combos to detail CSV
-    all_odp_org_pipeline = provision[["organisation", "pipeline"]].merge(
+    all_odp_org_pipeline = provision[["organisation", "pipeline", "cohort", "start_date"]].merge(
         org_lookup[["organisation", "organisation_name"]].drop_duplicates(),
         on="organisation",
         how="left"
-    )[["organisation", "pipeline", "organisation_name"]].drop_duplicates()
+    )[["organisation", "pipeline", "cohort", "start_date", "organisation_name"]].drop_duplicates()
 
     existing_org_pipeline = odp_qual_summary[["organisation", "pipeline"]].drop_duplicates()
     missing_org_pipeline = all_odp_org_pipeline[~all_odp_org_pipeline[["organisation", "pipeline"]].apply(tuple, axis=1).isin(
@@ -334,13 +341,16 @@ def main() -> None:
     if len(missing_org_pipeline) > 0:
         missing_detail_rows = missing_org_pipeline.copy()
         # Get quality criteria columns
-        qual_criteria = [col for col in odp_qual_summary.columns if col not in ["pipeline", "organisation", "organisation_name", "quality_level_label"]]
+        qual_criteria = [col for col in odp_qual_summary.columns if col not in ["pipeline", "organisation", "organisation_name", "cohort", "start_date", "quality_level_label"]]
         for col in qual_criteria:
             missing_detail_rows[col] = np.nan
         missing_detail_rows["quality_level_label"] = "0. no data"
         odp_qual_summary = pd.concat([odp_qual_summary, missing_detail_rows], ignore_index=True)
 
     odp_qual_summary = odp_qual_summary.sort_values(["pipeline", "organisation"]).reset_index(drop=True)
+    front_cols = ["pipeline", "cohort", "start_date", "organisation", "organisation_name"]
+    other_cols = [c for c in odp_qual_summary.columns if c not in front_cols]
+    odp_qual_summary = odp_qual_summary[front_cols + other_cols]
 
     out_scores = os.path.join(output_dir, "quality_ODP_dataset_scores_by_LPA.csv")
     out_detail = os.path.join(output_dir, "quality_ODP_dataset_quality_detail.csv")
