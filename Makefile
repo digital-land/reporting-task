@@ -23,10 +23,10 @@ data/reporting/deleted_entities.csv: data/reporting
 data/reporting/duplicate_entity_expectation.csv: data/reporting
 	python src/duplicate_geometry_expectations.py --output-dir data/reporting
 
-data/reporting/endpoint-dataset-issue-type-summary.csv: data/reporting
+data/reporting/endpoint_dataset_issue_type_summary.csv: data/reporting
 	python src/endpoint_dataset_issue_type_summary.py --output-dir data/reporting
 	
-data/reporting/all-endpoints-and-documentation-urls.csv: data/reporting
+data/reporting/all_endpoints_and_documentation_urls.csv: data/reporting
 	python src/endpoints_missing_doc_urls.py --output-dir data/reporting
 
 # produces two files but leave for now
@@ -38,19 +38,19 @@ data/reporting/flagged_failed_resources.csv: data/reporting
 
 # src/generate_odp_conformance_csv.py <- fix this one
 
-data/reporting/odp-issue.csv: 
+data/reporting/odp_issue.csv: 
 	python src/generate_odp_issues_csv.py --output-dir data/reporting
 
-data/reporting/odp-status.csv: 
+data/reporting/odp_status.csv: 
 	python src/generate_odp_status_csv.py --output-dir data/reporting
 
-data/reporting/listed-building-end-date.csv:
+data/reporting/listed_building_end_date.csv:
 	python src/listed_building_end_date.py --output-dir data/reporting
 
-data/reporting/logs-by-week.csv:
+data/reporting/logs_by_week.csv:
 	python src/logs_by_week.py --output-dir data/reporting
 
-data/reporting/odp-conformance.csv:
+data/reporting/odp_conformance.csv:
 	python src/generate_odp_conformance_csv.py --output-dir data/reporting --specification-dir data/specification
 
 data/reporting/quality_ODP_dataset_scores_by_LPA.csv data/reporting/quality_ODP_dataset_quality_detail.csv: data/reporting
@@ -72,16 +72,16 @@ data/reporting/runaway_resources.csv: data/reporting
 .PHONY: all
 all: data/reporting/deleted_entities.csv \
 	data/reporting/duplicate_entity_expectation.csv \
-	data/reporting/endpoint-dataset-issue-type-summary.csv \
-	data/reporting/all-endpoints-and-documentation-urls.csv \
+	data/reporting/endpoint_dataset_issue_type_summary.csv \
+	data/reporting/all_endpoints_and_documentation_urls.csv \
 	data/reporting/flag_endpoints_no_provision.csv \
 	data/reporting/flagged_failed_resources.csv \
-	data/reporting/odp-issue.csv \
-	data/reporting/odp-status.csv \
-	data/reporting/listed-building-end-date.csv \
-	data/reporting/logs-by-week.csv \
+	data/reporting/odp_issue.csv \
+	data/reporting/odp_status.csv \
+	data/reporting/listed_building_end_date.csv \
+	data/reporting/logs_by_week.csv \
 	data/reporting/runaway_resources.csv\
-	data/reporting/odp-conformance.csv\
+	data/reporting/odp_conformance.csv\
 	data/reporting/quality_ODP_dataset_scores_by_LPA.csv\
 	data/reporting/quality_ODP_dataset_quality_detail.csv\
 	data/reporting/entities_with_ended_orgs.csv\

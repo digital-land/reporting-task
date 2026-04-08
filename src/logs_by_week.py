@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     # Define URLs and SQL queries to export
     urls = {
-        "logs-by-week": "https://datasette.planning.data.gov.uk/digital-land"
+        "logs_by_week": "https://datasette.planning.data.gov.uk/digital-land"
     }
 
     sqls = [

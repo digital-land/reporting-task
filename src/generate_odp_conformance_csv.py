@@ -657,7 +657,7 @@ if __name__ == "__main__":
     else:
         logger.info(f"Specification file found at {str(specification_path)} so no download is needed")
 
-    output_path = os.path.join(output_dir, "odp-conformance.csv")
+    output_path = os.path.join(output_dir, "odp_conformance.csv")
 
     # Run summary function and filter invalid cohort rows
     _, df = get_odp_conformance_summary(dataset_types=["spatial", "document"], cohorts=["ODP-Track1", "ODP-Track2", "ODP-Track3", "ODP-Track4"],specification_path=specification_path)

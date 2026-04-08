@@ -230,7 +230,7 @@ def generate_odp_summary_csv(output_dir: str) -> str:
     # Convert output to DataFrame and save as CSV
     df_final = pd.DataFrame(output_rows)
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "odp-status.csv")
+    output_path = os.path.join(output_dir, "odp_status.csv")
     df_final.to_csv(output_path, index=False)
     print(f"CSV generated at {output_path} with {len(df_final)} rows")
     return output_path

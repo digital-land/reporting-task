@@ -175,7 +175,7 @@ def generate_detailed_issue_csv(output_dir: str, dataset_type="all") -> str:
 
     print("[INFO] Saving CSV...")
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "odp-issue.csv")
+    output_path = os.path.join(output_dir, "odp_issue.csv")
     merged[
         [
             "organisation",

@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     # Dictionary of table names and their Datasette URLs
     tables = {
-        "endpoint-dataset-issue-type-summary":
+        "endpoint_dataset_issue_type_summary":
             "https://datasette.planning.data.gov.uk/performance/endpoint_dataset_issue_type_summary"
     }
 
