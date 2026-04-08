@@ -57,7 +57,7 @@ data/reporting/quality_ODP_dataset_scores_by_LPA.csv data/reporting/quality_ODP_
 	python src/measure_odp_data_quality.py --output-dir data/reporting
 # src/operational_issues.py <- fix this one
 
-# data/reporting/operational-issues.csv: data/reporting
+# data/reporting/operational_issues.csv: data/reporting
 # 	python src/operational_issues.py --output-dir data/reporting
 
 data/reporting/entities_with_ended_orgs.csv:
