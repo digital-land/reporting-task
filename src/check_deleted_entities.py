@@ -46,8 +46,8 @@ def main(output_dir: str):
     df_org = df_org[['entity', 'organisation', 'name']].copy()
     df_org = df_org.rename(
         columns={
-            'entity': 'organisation-entity',
-            'name': 'organisation-name'
+            'entity': 'organisation_entity',
+            'name': 'organisation_name'
         }
     )
 
@@ -127,8 +127,8 @@ def main(output_dir: str):
         'dataset',
         'entity',
         'organisation',
-        'organisation-name',
-        'organisation-entity',
+        'organisation_name',
+        'organisation_entity',
         'name',
         'reference'
     ]

@@ -45,7 +45,7 @@ def main(output_dir: str):
         logger.error(f"Failed to load listed building data: {e}")
         os.makedirs(output_dir, exist_ok=True)
         pd.DataFrame().to_csv(
-            os.path.join(output_dir, "listed-building-end-date.csv"), index=False
+            os.path.join(output_dir, "listed_building_end_date.csv"), index=False
         )
         return
 
@@ -98,8 +98,10 @@ def main(output_dir: str):
     df_final = df_final.sort_values("organisation")
 
     os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, "listed-building-end-date.csv")
-    df_final[['reference', 'entity', 'end-date', 'organisation-entity', 'organisation']].to_csv(output_file, index=False)
+    output_file = os.path.join(output_dir, "listed_building_end_date.csv")
+    df_final[['reference', 'entity', 'end-date', 'organisation-entity', 'organisation']].rename(
+        columns={'end-date': 'end_date', 'organisation-entity': 'organisation_entity'}
+    ).to_csv(output_file, index=False)
     logger.info(f"Saved output to {output_file} with {len(df_final)} rows")
 
 

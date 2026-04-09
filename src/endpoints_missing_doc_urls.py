@@ -124,7 +124,7 @@ def save_results(df, output_dir):
     """
     os.makedirs(output_dir, exist_ok=True)
     #filtered = df.query("documentation_missing and is_active")
-    output_path = os.path.join(output_dir, "all-endpoints-and-documentation-urls.csv")
+    output_path = os.path.join(output_dir, "all_endpoints_and_documentation_urls.csv")
     df.to_csv(output_path, index=False)
     print(f"CSV saved: {output_path}")
 
