@@ -15,7 +15,7 @@ def full_datasette_table(tables, output_dir):
     for name, url in tables.items():
         full_url = f"{url}.csv?_stream=on"  # Enable full streaming of rows
         try:
-            df = pd.read_csv(full_url)  # Load full dataset
+            df = pd.read_csv(full_url, low_memory=False)  # Load full dataset
             csv_name = f"{name}.csv"
             save_path = os.path.join(output_dir, csv_name)
             df.to_csv(save_path, index=False)  # Save to CSV without index

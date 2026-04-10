@@ -9,7 +9,7 @@ def ended_orgs_active_endpoints(output_dir):
     
     # Organisations (ENDED ONLY: end_date IS NOT NULL)
     orgs_url = f"{base_url}/digital-land/organisation.csv?_stream=on"
-    orgs_df = pd.read_csv(orgs_url)
+    orgs_df = pd.read_csv(orgs_url, low_memory=False)
 
     ended_orgs_df = (
         orgs_df.loc[orgs_df["end_date"].notna(), ["name", "entity", "reference", "dataset"]]

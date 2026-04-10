@@ -67,27 +67,17 @@ def main(output_dir: str):
     entity_dfs = []
     for dataset_name, url in ENTITY_URLS.items():
         try:
-            df_entity = pd.read_parquet(url)
-
-            # Check for required columns
-            if 'entity' not in df_entity.columns or 'name' not in df_entity.columns:
+            df_entity = pd.read_parquet(url, columns=['entity', 'name', 'reference'])
+        except Exception:
+            try:
+                df_entity = pd.read_parquet(url, columns=['entity', 'name'])
+                df_entity['reference'] = ''
+            except Exception as e:
+                logger.error(f"Failed to load {dataset_name}: {e}")
                 continue
 
-            # Keep only needed columns
-            cols_to_keep = ['entity', 'name']
-            if 'reference' in df_entity.columns:
-                cols_to_keep.append('reference')
-            else:
-                # If reference column doesn't exist, add empty column
-                df_entity['reference'] = ''
-                cols_to_keep.append('reference')
-
-            df_entity = df_entity[cols_to_keep].copy()
-            df_entity['dataset'] = dataset_name
-            entity_dfs.append(df_entity)
-
-        except Exception as e:
-            logger.error(f"Failed to load {dataset_name}: {e}")
+        df_entity['dataset'] = dataset_name
+        entity_dfs.append(df_entity)
 
     if not entity_dfs:
         logger.error("No entity datasets loaded successfully")

@@ -109,17 +109,28 @@ def main(output_dir: str):
         "name",
         "organisation_entity",
     ]
+    # Parquet files use hyphenated column names; map to underscore equivalents
+    parquet_col_map = {
+        "entity": "entity",
+        "dataset": "dataset",
+        "end-date": "end_date",
+        "entry-date": "entry_date",
+        "geometry": "geometry",
+        "name": "name",
+        "organisation-entity": "organisation_entity",
+    }
     entity_tbls = []
     for dataset_name, entity_url in ENTITY_URLS.items():
         try:
-            t = pd.read_parquet(entity_url)
-            t.columns = t.columns.str.replace('-', '_')
-            # Ensure required columns exist (skip missing datasets)
+            try:
+                t = pd.read_parquet(entity_url, columns=list(parquet_col_map.keys()))
+                t = t.rename(columns=parquet_col_map)
+            except Exception:
+                # Fall back if column names already use underscores
+                t = pd.read_parquet(entity_url, columns=cols)
             missing = [c for c in ["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity"] if c not in t.columns]
             if missing:
                 continue
-            t = t[["entity", "end_date", "entry_date", "geometry", "name", "organisation_entity","dataset"]]
-            # Normalize key types almost like you could do this on import
             t["entity"] = pd.to_numeric(t["entity"], errors="coerce").astype("Int64")
             t["organisation_entity"] = pd.to_numeric(t["organisation_entity"], errors="coerce").astype("Int64")
             entity_tbls.append(t[cols].copy())
@@ -166,6 +177,7 @@ def main(output_dir: str):
         validate="m:1",
         suffixes=("", "_drop"),
     )
+    del entA
 
     # Orgs for A
     df_matches = df_matches.merge(
@@ -181,6 +193,7 @@ def main(output_dir: str):
     # Merge metadata for B
     # ------------------------------------------------------------
     entB = df_entities.add_prefix("entity_b_")
+    del df_entities
     df_matches = df_matches.merge(
         entB,
         how="left",
@@ -189,6 +202,7 @@ def main(output_dir: str):
         validate="m:1",
         suffixes=("", "_dropB"),
     )
+    del entB
 
     # Orgs for B
     df_matches = df_matches.merge(
@@ -225,7 +239,7 @@ def main(output_dir: str):
         # Load the appropriate lookup for this dataset
         if dataset in LOOKUP_URLS:
             try:
-                df_lookup = pd.read_csv(LOOKUP_URLS[dataset])
+                df_lookup = pd.read_csv(LOOKUP_URLS[dataset], low_memory=False)
                 df_lookup = df_lookup[["organisation", "entity"]].drop_duplicates(subset=["entity"], keep="first").copy()
                 
                 # Merge for entity_a

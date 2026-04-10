@@ -59,8 +59,12 @@ def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.Da
     return pd.concat(frames, ignore_index=True)
 
 
-def get_pdp_gdf(dataset: str, geometry_field: str) -> gpd.GeoDataFrame:
-    df = pd.read_csv(f"https://files.planning.data.gov.uk/dataset/{dataset}.csv", dtype="str")
+def get_pdp_gdf(dataset: str, geometry_field: str, usecols: list = None) -> gpd.GeoDataFrame:
+    df = pd.read_csv(
+        f"https://files.planning.data.gov.uk/dataset/{dataset}.csv",
+        dtype="str",
+        usecols=usecols,
+    )
     df.columns = [c.replace("-", "_") for c in df.columns]
     df = df[df[geometry_field].notnull()].copy()
     df[geometry_field] = df[geometry_field].apply(shapely.wkt.loads)
@@ -125,10 +129,10 @@ def main() -> None:
     )
     org_lookup[["lpa_flag", "organisation_entity"]] = org_lookup[["lpa_flag", "organisation_entity"]].astype(int)
 
-    ca_gdf = get_pdp_gdf("conservation-area", "point")
+    ca_gdf = get_pdp_gdf("conservation-area", "point", usecols=["entity", "organisation-entity", "point"])
     ca_gdf[["organisation_entity"]] = ca_gdf[["organisation_entity"]].astype(int)
 
-    lpa_gdf = get_pdp_gdf("local-planning-authority", "geometry").rename(
+    lpa_gdf = get_pdp_gdf("local-planning-authority", "geometry", usecols=["reference", "name", "geometry"]).rename(
         columns={"reference": "LPACD", "name": "lpa_name"}
     )
 
