@@ -78,7 +78,7 @@ def main(output_dir: str):
     # Load and merge organisation data
     # ---------------------------------------------------------------
     try:
-        df_org = pd.read_csv(ORG_URL)
+        df_org = pd.read_csv(ORG_URL, low_memory=False)
         df_org = df_org[["entity", "organisation"]].rename(columns={"entity": "organisation-entity"}).copy()
 
         df_final = pd.merge(

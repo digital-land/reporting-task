@@ -94,9 +94,9 @@ def main(output_dir):
     df_failed = pd.read_csv(StringIO(requests.get(csv_url).text))
 
     # Supporting metadata
-    df_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on")[["endpoint", "endpoint_url"]]
-    df_resource_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on")[["endpoint", "resource"]]
-    df_source_raw = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on")
+    df_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on", low_memory=False)[["endpoint", "endpoint_url"]]
+    df_resource_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on", low_memory=False)[["endpoint", "resource"]]
+    df_source_raw = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on", low_memory=False)
     df_source_raw["organisation_ref"] = df_source_raw["organisation"].str.replace(r"^.*?:", "", regex=True).astype(str)
     df_source = df_source_raw[["endpoint", "source", "collection", "organisation_ref"]]
 

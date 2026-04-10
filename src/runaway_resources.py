@@ -9,7 +9,7 @@ def main(output_dir):
     table = "reporting_historic_endpoints"
     full_url = f"{base_url}/{table}.csv?_stream=on"
 
-    df = pd.read_csv(full_url)
+    df = pd.read_csv(full_url, low_memory=False)
 
     # Filter and convert dates
     df = df[df["endpoint_end_date"].isna()].copy()
