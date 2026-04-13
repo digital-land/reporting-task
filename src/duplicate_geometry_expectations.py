@@ -3,6 +3,7 @@ import ast
 import argparse
 import os
 import logging
+from utils import read_csv_with_retry
 logger = logging.getLogger(__name__)
 
 FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
@@ -239,7 +240,7 @@ def main(output_dir: str):
         # Load the appropriate lookup for this dataset
         if dataset in LOOKUP_URLS:
             try:
-                df_lookup = pd.read_csv(LOOKUP_URLS[dataset], low_memory=False)
+                df_lookup = read_csv_with_retry(LOOKUP_URLS[dataset], low_memory=False)
                 df_lookup = df_lookup[["organisation", "entity"]].drop_duplicates(subset=["entity"], keep="first").copy()
                 
                 # Merge for entity_a

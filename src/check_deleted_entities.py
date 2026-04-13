@@ -2,7 +2,7 @@ import pandas as pd
 import json
 import os
 import logging
-import requests
+from utils import get_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,8 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     # Load and filter expectations
     # ---------------------------------------------------------------
-    response = requests.get(ENDPOINT_URL)
+    response = get_http_session().get(ENDPOINT_URL)
+    response.raise_for_status()
     data = response.json()
     df = pd.DataFrame(data['rows'], columns=data['columns'])
     df_filtered = df[['dataset', 'organisation', 'details']].copy()

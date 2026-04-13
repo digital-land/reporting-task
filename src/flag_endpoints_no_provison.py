@@ -1,23 +1,24 @@
 import pandas as pd
 import argparse
 import os
+from utils import read_csv_with_retry
 
 def endpoint_provisions_check(output_dir, include_pdf):
     # Fetch and filter Endpoint table
     endpoint_url = "https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on"
-    df0 = pd.read_csv(endpoint_url, low_memory=False)
+    df0 = read_csv_with_retry(endpoint_url, low_memory=False)
     df0 = df0[df0['end_date'].isna()]  # Keep only active endpoints
     df_endpoint = df0[["endpoint", "end_date", "endpoint_url"]].copy()
 
     # Fetch and process Source table
     source_url = "https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on"
-    df1 = pd.read_csv(source_url, low_memory=False)
+    df1 = read_csv_with_retry(source_url, low_memory=False)
     df1["organisation_ref"] = df1["organisation"].str.replace(r"^.*?:", "", regex=True).astype(str)
     df_source = df1[["endpoint", "source", "collection","organisation_ref"]].copy()
 
     # Fetch and filter Organisation table
     org_url = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
-    df2 = pd.read_csv(org_url, low_memory=False)
+    df2 = read_csv_with_retry(org_url, low_memory=False)
     df2 = df2[df2['end_date'].isna()]
     df2["reference"] = df2["reference"].astype(str)
     df_org = df2[["name", "reference"]].copy()
@@ -25,17 +26,17 @@ def endpoint_provisions_check(output_dir, include_pdf):
 
     # Fetch and deduplicate Resource_endpoint table
     resource_endpoint_url = "https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on"
-    df3 = pd.read_csv(resource_endpoint_url, low_memory=False)
+    df3 = read_csv_with_retry(resource_endpoint_url, low_memory=False)
     df_resource_endpoint = df3[["endpoint", "resource"]].drop_duplicates(subset="endpoint", keep="last")
 
     # Fetch and deduplicate Resource_dataset table
     resource_dataset_url = "https://datasette.planning.data.gov.uk/digital-land/resource_dataset.csv?_stream=on"
-    df4 = pd.read_csv(resource_dataset_url, low_memory=False)
+    df4 = read_csv_with_retry(resource_dataset_url, low_memory=False)
     df_resource_dataset = df4[["dataset", "resource"]].drop_duplicates(subset="resource", keep="last")
 
     # Fetch and process Provisions table
     provisions_url = "https://datasette.planning.data.gov.uk/digital-land/provision.csv?_stream=on"
-    df5 = pd.read_csv(provisions_url, low_memory=False)
+    df5 = read_csv_with_retry(provisions_url, low_memory=False)
     df5["organisation"] = df5["organisation"].str.replace(r"^.*?:", "", regex=True).astype(str)
     df_provisions = df5[["dataset", "organisation"]].copy()
     df_provisions.rename(columns={"organisation": "organisation_ref"}, inplace=True)

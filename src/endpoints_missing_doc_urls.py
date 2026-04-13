@@ -1,7 +1,7 @@
-import requests
 import pandas as pd
 import os
 import argparse
+from utils import get_http_session
 
 # Constants
 DATASSETTE_URL = "https://datasette.planning.data.gov.uk/digital-land.json"
@@ -51,7 +51,7 @@ def fetch_endpoint_data():
 
     while True:
         paginated_sql = BASE_SQL.format(offset=offset)
-        response = requests.get(DATASSETTE_URL, params={"sql": paginated_sql, "_size": 1000})
+        response = get_http_session().get(DATASSETTE_URL, params={"sql": paginated_sql, "_size": 1000})
 
         if response.status_code != 200:
             print("Failed to fetch data from Datasette.")

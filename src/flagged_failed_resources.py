@@ -11,7 +11,7 @@ import os
 import argparse
 import pandas as pd
 import requests
-from io import StringIO
+from utils import get_http_session, read_csv_with_retry
 
 def is_pdf_url(url):
     """Check if URL points to a PDF by sending a HEAD request and inspecting Content-Type."""
@@ -91,12 +91,12 @@ def main(output_dir):
         "where+status%3D'failed'+and+(r.end_date+is+null+or+r.end_date%3D'')+"
         "order+by+r.start_date+desc+limit+1000"
     )
-    df_failed = pd.read_csv(StringIO(requests.get(csv_url).text))
+    df_failed = read_csv_with_retry(csv_url)
 
     # Supporting metadata
-    df_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on", low_memory=False)[["endpoint", "endpoint_url"]]
-    df_resource_endpoint = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on", low_memory=False)[["endpoint", "resource"]]
-    df_source_raw = pd.read_csv("https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on", low_memory=False)
+    df_endpoint = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on", low_memory=False)[["endpoint", "endpoint_url"]]
+    df_resource_endpoint = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on", low_memory=False)[["endpoint", "resource"]]
+    df_source_raw = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on", low_memory=False)
     df_source_raw["organisation_ref"] = df_source_raw["organisation"].str.replace(r"^.*?:", "", regex=True).astype(str)
     df_source = df_source_raw[["endpoint", "source", "collection", "organisation_ref"]]
 

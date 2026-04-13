@@ -8,13 +8,11 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-import requests
-from requests import adapters
 from urllib.request import urlretrieve
-from urllib3 import Retry
 from pathlib import Path
 import argparse
 import os
+from utils import get_http_session
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +38,6 @@ def parse_args():
     )
     return parser.parse_args()
 
-def get_datasette_http():
-    """
-    Creates and returns a requests.Session object with retry logic built in.
-    Used for robust querying of Datasette endpoints.
-    """
-    retry_strategy = Retry(total=3, status_forcelist=[400], backoff_factor=0)
-
-    adapter = adapters.HTTPAdapter(max_retries=retry_strategy)
-
-    http = requests.Session()
-    http.mount("https://", adapter)
-    http.mount("http://", adapter)
-
-    return http
-
-
 def get_datasette_query(db, sql, filter=None, url="https://datasette.planning.data.gov.uk"):
     """
     Executes an SQL query against a Datasette database and returns the result as a DataFrame.
@@ -73,15 +55,10 @@ def get_datasette_query(db, sql, filter=None, url="https://datasette.planning.da
     params = {"sql": sql, "_shape": "array", "_size": "max"}
     if filter:
         params.update(filter)
-    try:
-        http = get_datasette_http()
-        resp = http.get(url, params=params)
-        resp.raise_for_status()
-        df = pd.DataFrame.from_dict(resp.json())
-        return df
-    except Exception as e:
-        logging.warning(e)
-        return None
+    http = get_http_session()
+    resp = http.get(url, params=params)
+    resp.raise_for_status()
+    return pd.DataFrame.from_dict(resp.json())
 
 def get_provisions(selected_cohorts, all_cohorts):
     """

@@ -14,6 +14,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely.wkt
+from utils import read_csv_with_retry
 
 ODP_DATASETS = [
     "conservation-area",
@@ -35,7 +36,7 @@ def parse_args() -> argparse.Namespace:
 
 def datasette_query(db: str, sql: str) -> pd.DataFrame:
     params = urllib.parse.urlencode({"sql": sql, "_size": "max"})
-    return pd.read_csv(f"https://datasette.planning.data.gov.uk/{db}.csv?{params}")
+    return read_csv_with_retry(f"https://datasette.planning.data.gov.uk/{db}.csv?{params}")
 
 
 def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.DataFrame:
@@ -60,7 +61,7 @@ def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.Da
 
 
 def get_pdp_gdf(dataset: str, geometry_field: str, usecols: list = None) -> gpd.GeoDataFrame:
-    df = pd.read_csv(
+    df = read_csv_with_retry(
         f"https://files.planning.data.gov.uk/dataset/{dataset}.csv",
         dtype="str",
         usecols=usecols,
