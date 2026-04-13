@@ -7,6 +7,7 @@ import argparse
 import os
 import time
 import logging
+from utils import get_http_session, read_csv_with_retry
 
 # ---------------------------------------
 # Config
@@ -33,7 +34,7 @@ def fetch_sql_df(base_url: str, sql: str, timeout: int = 60) -> pd.DataFrame:
         if has_db_path
         else base_url.rstrip("/") + "/.json"  # e.g. ...gov.uk/.json
     )
-    r = requests.get(
+    r = get_http_session().get(
         endpoint,
         params={"sql": sql, "_shape": "array", "_size": "max"},
         timeout=timeout,
@@ -122,7 +123,7 @@ def build_dataset(output_dir):
 
     # 2) Organisations (ENDED ONLY: end_date IS NOT NULL)
     orgs_url = f"{BASE_HOST}/digital-land/organisation.csv?_stream=on"
-    orgs_df = pd.read_csv(orgs_url, low_memory=False)
+    orgs_df = read_csv_with_retry(orgs_url, low_memory=False)
 
     ended_orgs_df = (
         orgs_df.loc[orgs_df["end_date"].notna(), ["name", "entity", "reference", "dataset", "end_date"]]

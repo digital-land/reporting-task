@@ -1,8 +1,8 @@
-import requests
 import pandas as pd
 import urllib.parse
 import os
 import argparse
+from utils import get_http_session
 
 def sql_queried_datasette_tables(urls: dict, sqls: list, save_dir: str):
     """
@@ -36,7 +36,7 @@ def sql_queried_datasette_tables(urls: dict, sqls: list, save_dir: str):
             print(f"Fetching: {name} from SQL URL:\n{full_url}")
 
             # Fetch JSON data and load into DataFrame
-            response = requests.get(full_url)
+            response = get_http_session().get(full_url)
             response.raise_for_status()
             data = response.json()
             print(f"Rows returned: {len(data)}")

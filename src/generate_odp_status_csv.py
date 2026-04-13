@@ -11,10 +11,8 @@ The script:
 
 import os
 import pandas as pd
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
 import argparse
+from utils import get_http_session
 
 # Dataset to Pipeline Map
 ALL_PIPELINES = {
@@ -29,20 +27,6 @@ ALL_PIPELINES = {
 }
 
 # Datasette Query Helpers
-def get_datasette_http():
-    """
-    Returns a requests session with retry logic to handle larger Datasette queries.
-
-    Returns:
-        requests.Session: Session with retry strategy enabled.
-    """
-    retry_strategy = Retry(total=3, status_forcelist=[400], backoff_factor=0.2)
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    http = requests.Session()
-    http.mount("https://", adapter)
-    return http
-
-
 def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
     """
     Executes SQL against a Datasette database and returns the result as a DataFrame.
@@ -58,14 +42,10 @@ def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.
     full_url = f"{url}/{db}.json"
     params = {"sql": sql, "_shape": "array"}
 
-    try:
-        http = get_datasette_http()
-        response = http.get(full_url, params=params)
-        response.raise_for_status()
-        return pd.DataFrame.from_dict(response.json())
-    except Exception as e:
-        print(f"Datasette query failed: {e}")
-        return pd.DataFrame()
+    http = get_http_session()
+    response = http.get(full_url, params=params)
+    response.raise_for_status()
+    return pd.DataFrame.from_dict(response.json())
 
 # Data Retrieval Functions
 def get_provisions():

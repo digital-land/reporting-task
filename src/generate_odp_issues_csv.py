@@ -6,10 +6,8 @@ of expected dataset performance per organisation and cohort.
 
 import os
 import pandas as pd
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import argparse
+from utils import get_http_session
 
 # Dataset Definitions
 SPATIAL_DATASETS = [
@@ -26,20 +24,6 @@ DOCUMENT_DATASETS = [
 ]
 ALL_DATASETS = SPATIAL_DATASETS + DOCUMENT_DATASETS
 
-# HTTP Helpers
-def get_datasette_http():
-    """
-    Returns a requests.Session object with retry logic for querying Datasette endpoints.
-
-    Returns:
-        requests.Session: A session object with retry strategy for robustness.
-    """
-    retry_strategy = Retry(total=3, status_forcelist=[400], backoff_factor=0.2)
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    http = requests.Session()
-    http.mount("https://", adapter)
-    return http
-
 # Datasette Query Helper
 def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
     """
@@ -55,14 +39,10 @@ def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.
     """
     full_url = f"{url}/{db}.json"
     params = {"sql": sql, "_shape": "array", "_size": "max"}
-    try:
-        http = get_datasette_http()
-        response = http.get(full_url, params=params)
-        response.raise_for_status()
-        return pd.DataFrame(response.json())
-    except Exception as e:
-        print(f"[ERROR] Datasette query failed: {e}")
-        return pd.DataFrame()
+    http = get_http_session()
+    response = http.get(full_url, params=params)
+    response.raise_for_status()
+    return pd.DataFrame(response.json())
 
 # Provision Query
 def get_provisions():

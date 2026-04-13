@@ -1,6 +1,6 @@
-import pandas as pd
 import os
 import argparse
+from utils import read_csv_with_retry
 
 def full_datasette_table(tables, output_dir):
     """
@@ -15,7 +15,7 @@ def full_datasette_table(tables, output_dir):
     for name, url in tables.items():
         full_url = f"{url}.csv?_stream=on"  # Enable full streaming of rows
         try:
-            df = pd.read_csv(full_url, low_memory=False)  # Load full dataset
+            df = read_csv_with_retry(full_url, low_memory=False)  # Load full dataset
             csv_name = f"{name}.csv"
             save_path = os.path.join(output_dir, csv_name)
             df.to_csv(save_path, index=False)  # Save to CSV without index

@@ -2,6 +2,7 @@ import os
 import argparse
 import click
 import pandas as pd
+from utils import read_csv_with_retry
 
 base_url = "https://datasette.planning.data.gov.uk"
 
@@ -9,7 +10,7 @@ def ended_orgs_active_endpoints(output_dir):
     
     # Organisations (ENDED ONLY: end_date IS NOT NULL)
     orgs_url = f"{base_url}/digital-land/organisation.csv?_stream=on"
-    orgs_df = pd.read_csv(orgs_url, low_memory=False)
+    orgs_df = read_csv_with_retry(orgs_url, low_memory=False)
 
     ended_orgs_df = (
         orgs_df.loc[orgs_df["end_date"].notna(), ["name", "entity", "reference", "dataset"]]
@@ -24,7 +25,7 @@ def ended_orgs_active_endpoints(output_dir):
 
     # Endpoints (ACTIVE ONLY: endpoint_end_date IS NULL)
     endpoints_url = f"{base_url}/performance/reporting_historic_endpoints.csv?_stream=on"
-    endpoints_df = pd.read_csv(endpoints_url, low_memory=False)
+    endpoints_df = read_csv_with_retry(endpoints_url, low_memory=False)
 
     active_endpoints_df = endpoints_df[endpoints_df["endpoint_end_date"].isna()].copy()
 

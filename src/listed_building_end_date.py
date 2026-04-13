@@ -9,6 +9,7 @@ with organisation names.
 import pandas as pd
 import os
 import logging
+from utils import read_csv_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,11 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     try:
         logger.info("Fetching listed-building data...")
-        df_bo = pd.read_csv(LISTED_BUILDING_URL, low_memory=False)
+        df_bo = read_csv_with_retry(LISTED_BUILDING_URL, low_memory=False)
         logger.info(f"Loaded {len(df_bo)} listed building records")
 
         logger.info("Fetching listed-building-outline data...")
-        df_bo_outline = pd.read_csv(LISTED_BUILDING_OUTLINE_URL, low_memory=False)
+        df_bo_outline = read_csv_with_retry(LISTED_BUILDING_OUTLINE_URL, low_memory=False)
         logger.info(f"Loaded {len(df_bo_outline)} listed building outline records")
 
     except Exception as e:
@@ -78,7 +79,7 @@ def main(output_dir: str):
     # Load and merge organisation data
     # ---------------------------------------------------------------
     try:
-        df_org = pd.read_csv(ORG_URL, low_memory=False)
+        df_org = read_csv_with_retry(ORG_URL, low_memory=False)
         df_org = df_org[["entity", "organisation"]].rename(columns={"entity": "organisation-entity"}).copy()
 
         df_final = pd.merge(
