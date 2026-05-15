@@ -1,15 +1,7 @@
-black
-flake8
-python-magic==0.4.24
-datasette
-csvkit
-chardet
-PyPDF2
+click==8.1.8
 pandas
 geopandas
 shapely
+pyproj
+awscli
 tqdm
-click
-pyarrow
-click==8.1.8
--e git+https://github.com/digital-land/digital-land-python.git#egg=digital-land
