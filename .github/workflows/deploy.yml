@@ -29,6 +29,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    outputs:
+      sha_short: ${{ steps.vars.outputs.sha_short }}
     env:
       DOCKER_REPO: ${{ secrets.DEPLOY_DOCKER_REPOSITORY }}
     steps:
@@ -65,11 +67,6 @@ jobs:
         environment: ${{ fromJSON(needs.detect-environments.outputs.environments) }}
     environment: ${{ matrix.environment }}
     steps:
-      - id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_REF: ${{ github.ref }}
-
       - uses: aws-actions/configure-aws-credentials@v1-node16
         with:
           aws-access-key-id: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID }}
@@ -78,8 +75,8 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v1
 
-      - run: docker pull $DOCKER_REPO:${{ steps.vars.outputs.sha_short }}
+      - run: docker pull $DOCKER_REPO:${{ needs.build.outputs.sha_short }}
 
-      - run: docker tag $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} $DOCKER_REPO:${{ matrix.environment }}
+      - run: docker tag $DOCKER_REPO:${{ needs.build.outputs.sha_short }} $DOCKER_REPO:${{ matrix.environment }}
 
       - run: docker push $DOCKER_REPO:${{ matrix.environment }}
