@@ -4,4 +4,4 @@ geopandas
 shapely
 pyproj
 awscli
-tqdm
+requests
