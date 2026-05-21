@@ -59,6 +59,28 @@ Generates ODP data quality reporting outputs for provider and dataset coverage.
 
 ---
 
+### dataset_resource_vs_platform_report.py
+
+Compares entity counts between the Platform and dataset_resource data for ODP datasets to identify potential data duplication.
+
+**What it does:**
+
+- Fetches reporting_historic_endpoints from Datasette (paginated JSON)
+- Filters to 5 ODP datasets (article-4-direction-area, conservation-area, listed-building-outline, tree, tree-preservation-zone) and active endpoints, deduplicates on resource
+- Fetches dataset_resource.csv for each dataset and merges on (dataset, resource)
+- Aggregates entity/entry/line counts per LPA
+- Fetches platform dataset CSVs and counts entities per organisation
+- Compares platform entity counts against dataset_resource line counts via a ratio
+
+**Outputs:**
+
+- `dataset_resource_odp_detailed_counts.csv`
+- `dataset_resource_vs_platform_odp_summary.csv`
+
+**Run:** `python src/dataset_resource_vs_platform_report.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ## Adding New Scripts
 
 When creating a new reporting script, please add a brief description to this README following the format above. Include:
