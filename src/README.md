@@ -81,6 +81,23 @@ Compares entity counts between the Platform and dataset_resource data for ODP da
 
 ---
 
+### generate_plans_status_csv.py
+
+Generates a plan status CSV summarising endpoint presence against expected plan dataset provisions for the local-plan collection.
+
+**What it does:**
+
+- Retrieves all organisations with a statutory provision to provide plan datasets (where `specification = "local-plan"`)
+- Fetches endpoint status from the `reporting_latest_endpoints` table (paginated)
+- Checks five pipelines per organisation: `local-plan`, `minerals-plan`, `plan-timetable`, `supplementary-plan`, `waste-plan`
+- Rows with no matching endpoint are marked as `No endpoint added`
+
+**Output:** `plan_status.csv`
+
+**Run:** `python src/generate_plans_status_csv.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ## Adding New Scripts
 
 When creating a new reporting script, please add a brief description to this README following the format above. Include:
