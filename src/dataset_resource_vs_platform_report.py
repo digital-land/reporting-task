@@ -74,7 +74,6 @@ def fetch_historic_endpoints(session):
 
         all_rows.extend(rows)
         last_rowid = rows[-1]["rowid"]
-        print(f"Fetched {len(all_rows)} rows...")
 
         if len(rows) < 1000:
             break
