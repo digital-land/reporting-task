@@ -74,8 +74,8 @@ data/reporting/runaway_resources.csv: data/reporting
 
 .PHONY: all
 all: data/reporting/deleted_entities.csv \
-	data/reporting/dataset_resource_odp_detailed_counts.csv\
-	data/reporting/dataset_resource_vs_platform_odp_summary.csv
+	data/reporting/dataset_resource_odp_detailed_counts.csv \
+	data/reporting/dataset_resource_vs_platform_odp_summary.csv \
 	data/reporting/duplicate_entity_expectation.csv \
 	data/reporting/endpoint_dataset_issue_type_summary.csv \
 	data/reporting/all_endpoints_and_documentation_urls.csv \
@@ -85,9 +85,9 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/odp_status.csv \
 	data/reporting/listed_building_end_date.csv \
 	data/reporting/logs_by_week.csv \
-	data/reporting/runaway_resources.csv\
-	data/reporting/odp_conformance.csv\
-	data/reporting/quality_ODP_dataset_scores_by_LPA.csv\
-	data/reporting/quality_ODP_dataset_quality_detail.csv\
-	data/reporting/entities_with_ended_orgs.csv\
+	data/reporting/runaway_resources.csv \
+	data/reporting/odp_conformance.csv \
+	data/reporting/quality_ODP_dataset_scores_by_LPA.csv \
+	data/reporting/quality_ODP_dataset_quality_detail.csv \
+	data/reporting/entities_with_ended_orgs.csv \
 	data/reporting/ended_orgs_active_endpoints.csv
