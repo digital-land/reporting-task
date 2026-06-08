@@ -98,6 +98,24 @@ Generates a plan status CSV summarising endpoint presence against expected plan 
 
 ---
 
+### generate_plans_issues_csv.py
+
+Generates a detailed issue-level CSV for Plans datasets, joining issue summaries with statutory provision data.
+
+**What it does:**
+
+- Retrieves all organisations with a statutory provision to provide plan datasets (where `specification = "local-plan"`)
+- Fetches issue type summaries from `endpoint_dataset_issue_type_summary` for the five plan pipelines (paginated)
+- Joins with `endpoint_dataset_summary` on both `endpoint` and `dataset` to retrieve endpoint status metadata
+- Merges issues against provisions on `organisation`
+- Outputs one row per organisation / pipeline / issue type / field combination
+
+**Output:** `plan_issue.csv`
+
+**Run:** `python src/generate_plans_issues_csv.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ## Adding New Scripts
 
 When creating a new reporting script, please add a brief description to this README following the format above. Include:
