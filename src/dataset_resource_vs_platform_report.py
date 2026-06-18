@@ -19,10 +19,13 @@ csv.field_size_limit(10 * 1024 * 1024)
 
 DATASETS = [
     "article-4-direction-area",
+    "article-4-direction",
     "tree",
     "tree-preservation-zone",
+    "tree-preservation-order",
     "listed-building-outline",
     "conservation-area",
+    "conservation-area-document"
 ]
 
 DATASETTE_BASE = "https://datasette.planning.data.gov.uk"
