@@ -25,7 +25,9 @@ DATASETS = [
     "tree-preservation-order",
     "listed-building-outline",
     "conservation-area",
-    "conservation-area-document"
+    "conservation-area-document",
+    "local-plan",
+    "plan-timetable"
 ]
 
 DATASETTE_BASE = "https://datasette.planning.data.gov.uk"
