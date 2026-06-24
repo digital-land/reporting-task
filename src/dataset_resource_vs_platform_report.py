@@ -88,21 +88,27 @@ def fetch_historic_endpoints(session):
 
 
 def filter_and_deduplicate(rows):
-    """Filter to ODP datasets and active endpoints, deduplicate on (resource, dataset)."""
-    seen = set()
-    filtered = []
+    """Filter to ODP datasets, deduplicate on (resource, dataset). Returns (active, inactive)."""
+    seen_active = set()
+    seen_inactive = set()
+    active = []
+    inactive = []
     for row in rows:
         if row["dataset"] not in DATASETS:
             continue
-        if row["resource_end_date"] != "":
+        if not row["resource"]:
             continue
         key = (row["resource"], row["dataset"])
-        if key in seen:
-            continue
-        seen.add(key)
-        filtered.append(row)
-    print(f"After filter/dedup: {len(filtered)} rows")
-    return filtered
+        if row["resource_end_date"] not in ("", None):
+            if key not in seen_inactive:
+                seen_inactive.add(key)
+                inactive.append(row)
+        else:
+            if key not in seen_active:
+                seen_active.add(key)
+                active.append(row)
+    print(f"After filter/dedup: {len(active)} active, {len(inactive)} inactive rows")
+    return active, inactive
 
 
 def fetch_dataset_resources(session):
@@ -139,7 +145,7 @@ def merge_historic_with_resources(report_he, dr_lookup):
     return merged
 
 
-def aggregate_counts(merged):
+def aggregate_counts(merged, inactive):
     """
     Returns:
         summary_rows: grouped by (dataset, name, organisation) with sums + counts
@@ -147,7 +153,7 @@ def aggregate_counts(merged):
     """
     summary = defaultdict(lambda: {
         "entity_count": 0.0, "entry_count": 0, "line_count": 0,
-        "endpoint_count": 0, "resource_count": 0,
+        "endpoints": set(), "resources": set(),
     })
 
     for row in merged:
@@ -155,16 +161,34 @@ def aggregate_counts(merged):
         summary[key]["entity_count"] += row["entity_count"]
         summary[key]["entry_count"] += row["entry_count"]
         summary[key]["line_count"] += row["line_count"]
-        summary[key]["endpoint_count"] += 1
-        summary[key]["resource_count"] += 1
+        summary[key]["endpoints"].add(row["endpoint"])
+        summary[key]["resources"].add(row["resource"])
 
+    inactive_summary = defaultdict(lambda: {"endpoints": set(), "resources": set()})
+    for row in inactive:
+        key = (row["dataset"], row["name"], row["organisation"])
+        inactive_summary[key]["endpoints"].add(row["endpoint"])
+        inactive_summary[key]["resources"].add(row["resource"])
+
+    all_keys = set(summary.keys()) | set(inactive_summary.keys())
     summary_rows = []
-    for (dataset, name, organisation), vals in summary.items():
+    for (dataset, name, organisation) in all_keys:
+        vals = summary.get((dataset, name, organisation), {
+            "entity_count": 0.0, "entry_count": 0, "line_count": 0,
+            "endpoints": set(), "resources": set(),
+        })
+        inactive_vals = inactive_summary.get((dataset, name, organisation), {"endpoints": set(), "resources": set()})
         summary_rows.append({
             "dataset": dataset,
             "name": name,
             "organisation": organisation,
-            **vals,
+            "entity_count": vals["entity_count"],
+            "entry_count": vals["entry_count"],
+            "line_count": vals["line_count"],
+            "endpoint_count": len(vals["endpoints"]),
+            "resource_count": len(vals["resources"]),
+            "inactive_endpoint_count": len(inactive_vals["endpoints"]),
+            "inactive_resource_count": len(inactive_vals["resources"]),
         })
 
     detailed = defaultdict(lambda: {"entity_count": 0.0, "entry_count": 0, "line_count": 0})
@@ -271,6 +295,8 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
         dr_line_count = summary.get("line_count")
         dr_endpoint_count = summary.get("endpoint_count")
         dr_resource_count = summary.get("resource_count")
+        dr_inactive_endpoint_count = summary.get("inactive_endpoint_count")
+        dr_inactive_resource_count = summary.get("inactive_resource_count")
 
         ratio = ""
         if platform_count is not None and dr_line_count and dr_line_count > 0:
@@ -286,6 +312,8 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
             "dataset_resource_line_count": dr_line_count if dr_line_count is not None else "",
             "dataset_resource_endpoint_count": dr_endpoint_count if dr_endpoint_count is not None else "",
             "dataset_resource_resource_count": dr_resource_count if dr_resource_count is not None else "",
+            "dataset_resource_inactive_endpoint_count": dr_inactive_endpoint_count if dr_inactive_endpoint_count is not None else "",
+            "dataset_resource_inactive_resource_count": dr_inactive_resource_count if dr_inactive_resource_count is not None else "",
             "platform_divided_by_dr_line_count": ratio,
         })
     return result
@@ -296,14 +324,14 @@ def main(output_dir):
 
     # Fetch and filter historic endpoints
     all_rows = fetch_historic_endpoints(session)
-    report_he = filter_and_deduplicate(all_rows)
+    report_he, inactive_he = filter_and_deduplicate(all_rows)
 
     # Fetch dataset_resource data and merge
     dr_lookup = fetch_dataset_resources(session)
     merged = merge_historic_with_resources(report_he, dr_lookup)
 
     # Aggregate counts
-    summary_counts, detailed_counts = aggregate_counts(merged)
+    summary_counts, detailed_counts = aggregate_counts(merged, inactive_he)
 
     # Fetch platform data and count entities
     org_lookup = fetch_organisation_lookup(session)
