@@ -39,23 +39,43 @@ Extracts listed building end dates associated with organisations.
 
 ---
 
-### measure_odp_data_quality.py
+### measure_odp_mandated_data_quality.py
 
-Generates ODP data quality reporting outputs for provider and dataset coverage.
+Generates ODP + mandated dataset quality reporting outputs for provider and dataset coverage.
 
 **What it does:**
 
-- Builds ODP quality scores for each provider across key datasets
-- Produces an LPA-by-dataset quality summary table
+- Builds quality scores for each provider across ODP datasets plus mandated datasets (statutory, or "encouraged" specifically for LPAs - computed live from `provision_rule` rather than hardcoded)
+- Determines authoritative sourcing from each dataset's own entity-level `quality` signal (rather than a geospatial join)
+- Combines authoritative status with issue severity into a 0-6 quality level (authoritative axis x rung axis), plus criteria pass/fail detail
+- Produces an LPA-by-dataset quality summary table covering ODP + mandated dataset columns - organisations with no ODP provision of their own (e.g. a mandated-dataset-only provider) get a blank `cohort`/`start_date`
 - Produces a dataset quality criteria detail table by provider
 - Writes both reporting tables as CSV files
 
 **Outputs:**
 
-- `quality_ODP_dataset_scores_by_LPA.csv`
-- `quality_ODP_dataset_quality_detail.csv`
+- `quality_ODP_mandated_dataset_scores_by_LPA.csv`
+- `quality_ODP_mandated_dataset_quality_detail.csv`
 
-**Run:** `python src/measure_odp_data_quality.py --output-dir <directory>` (or `python3` depending on your system setup)
+**Run:** `python src/measure_odp_mandated_data_quality.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
+### measure_single_source_data_quality.py
+
+Generates a data quality detail report for "single source" datasets - everything that isn't ODP-scoped or mandated (see measure_odp_mandated_data_quality.py, which covers those with slightly different checks).
+
+**What it does:**
+
+- Determines single-source pipelines as everything in `provision_rule` that isn't ODP or mandated
+- Scores each provider's data on the same 0-6 scale (authoritative axis x rung axis) as the ODP/mandated report
+- Applies a staleness cap specific to single-source datasets: data older than 365 days can't score above "usable", since these datasets have no alternative source to cross-check freshness against
+- Produces a dataset quality criteria detail table by provider
+- Writes the detail table as a CSV file
+
+**Output:** `quality_single_source_dataset_quality_detail.csv`
+
+**Run:** `python src/measure_single_source_data_quality.py --output-dir <directory>` (or `python3` depending on your system setup)
 
 ---
 
