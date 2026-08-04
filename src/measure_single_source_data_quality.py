@@ -175,6 +175,12 @@ def main() -> None:
     )
     org_lookup[["lpa_flag", "organisation_entity"]] = org_lookup[["lpa_flag", "organisation_entity"]].astype(int)
 
+    # exclude organisations that have ended - a still-active endpoint record can linger in the
+    # source data after an organisation's own end_date is set, and closed/merged organisations
+    # shouldn't appear in the quality report
+    active_organisations = set(org_lookup.loc[org_lookup["end_date"].isnull(), "organisation"])
+    endpoint_issues = endpoint_issues[endpoint_issues["organisation"].isin(active_organisations)]
+
     # Authoritative-source signal: query each active pipeline's own entity table for its
     # platform-computed `quality` field, keyed by organisation_entity.
     entity_quality_frames = []
