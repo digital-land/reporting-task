@@ -4,6 +4,16 @@ This directory contains Python scripts that generate reporting datasets. Each sc
 
 Scripts are listed alphabetically below. `utils.py` is not a standalone script — it's a shared module (`get_http_session`, `read_csv_with_retry`) imported by many of the scripts below to add retry handling around HTTP/CSV requests.
 
+## Downloading Generated Reports
+
+All scripts in this directory are run automatically every night, and their CSV outputs are published at:
+
+```text
+https://files.planning.data.gov.uk/reporting/<filename>.csv
+```
+
+just swap in the filename from the script's **Output(s)** entry below — e.g. `deleted_entities.csv` (from `check_deleted_entities.py`) is published at `https://files.planning.data.gov.uk/reporting/deleted_entities.csv`.
+
 ## Scripts
 
 ### check_deleted_entities.py
