@@ -200,6 +200,13 @@ def main() -> None:
     )
     org_lookup[["lpa_flag", "organisation_entity"]] = org_lookup[["lpa_flag", "organisation_entity"]].astype(int)
 
+    # exclude organisations that have ended - a still-active endpoint or provision record can
+    # linger in the source data after an organisation's own end_date is set, and closed/merged
+    # organisations shouldn't appear in the quality report
+    active_organisations = set(org_lookup.loc[org_lookup["end_date"].isnull(), "organisation"])
+    endpoint_issues = endpoint_issues[endpoint_issues["organisation"].isin(active_organisations)]
+    provision = provision[provision["organisation"].isin(active_organisations)]
+
     lpa_gdf = get_pdp_gdf("local-planning-authority", "geometry", usecols=["reference", "name", "geometry"]).rename(
         columns={"reference": "LPACD", "name": "lpa_name"}
     )
