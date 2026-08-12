@@ -44,7 +44,7 @@ Compares entity counts between the Platform and dataset_resource data for ODP da
 - Filters to 5 ODP datasets (article-4-direction-area, conservation-area, listed-building-outline, tree, tree-preservation-zone) and active endpoints, deduplicates on resource
 - Fetches dataset_resource.csv for each dataset and merges on (dataset, resource)
 - Aggregates entity/entry/line counts per LPA
-- Fetches platform dataset CSVs and counts entities per organisation
+- Fetches platform dataset CSVs and counts entities per organisation, excluding entities with quality "some"
 - Compares platform entity counts against dataset_resource line counts via a ratio
 
 **Outputs:**

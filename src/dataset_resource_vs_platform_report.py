@@ -239,6 +239,7 @@ def fetch_organisation_lookup(session):
 def fetch_platform_data_and_count(session, org_lookup):
     """
     For each dataset, fetch the platform CSV and count entities per (dataset, name, organisation).
+    Entities with quality "some" are excluded from the count.
     """
     counts = defaultdict(int)
 
@@ -251,6 +252,8 @@ def fetch_platform_data_and_count(session, org_lookup):
         reader = csv.DictReader(response.iter_lines(decode_unicode=True))
         row_count = 0
         for row in reader:
+            if row.get("quality", "") == "some":
+                continue
             org_entity = row.get("organisation-entity", "")
             org_info = org_lookup.get(org_entity, {})
             org_name = org_info.get("organisation-name", "")
