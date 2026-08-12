@@ -88,7 +88,7 @@ def fetch_historic_endpoints(session):
 
 
 def filter_and_deduplicate(rows):
-    """Filter to ODP datasets, deduplicate on (resource, dataset). Returns (active, inactive)."""
+    """Filter to ODP datasets, deduplicate on (organisation, resource, dataset). Returns (active, inactive)."""
     seen_active = set()
     seen_inactive = set()
     active = []
@@ -98,7 +98,10 @@ def filter_and_deduplicate(rows):
             continue
         if not row["resource"]:
             continue
-        key = (row["resource"], row["dataset"])
+        # Scoped to organisation: the same resource hash can legitimately appear for
+        # multiple organisations (e.g. shared services with byte-identical endpoint content),
+        # so deduping on (resource, dataset) alone would drop one organisation's row entirely.
+        key = (row["organisation"], row["resource"], row["dataset"])
         if row["resource_end_date"] not in ("", None):
             if key not in seen_inactive:
                 seen_inactive.add(key)
