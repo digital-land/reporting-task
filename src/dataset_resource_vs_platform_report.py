@@ -114,6 +114,40 @@ def filter_and_deduplicate(rows):
     return active, inactive
 
 
+def build_endpoint_status_lookup(rows):
+    """
+    Determine each still-live endpoint's most recently known status (e.g. 200, 404),
+    independent of whether it currently has a resource attached.
+
+    A failing endpoint (404, 500, etc.) typically has no live resource to merge against
+    dataset_resource, so filter_and_deduplicate drops it before status is ever considered.
+    That silently hides broken endpoints instead of reporting them. This looks at the full,
+    unfiltered historic-endpoints data instead: for each endpoint that hasn't itself been
+    retired (endpoint_end_date is empty), it picks the row with the latest
+    latest_log_entry_date as that endpoint's current state, resource or no resource.
+
+    Returns dict keyed by (dataset, organisation) -> {"name": ..., "statuses": set(...)}.
+    """
+    latest_by_endpoint = {}
+    for row in rows:
+        if row["dataset"] not in DATASETS:
+            continue
+        if row["endpoint_end_date"] not in ("", None):
+            continue
+        key = (row["dataset"], row["organisation"], row["endpoint"])
+        log_date = row.get("latest_log_entry_date") or ""
+        existing = latest_by_endpoint.get(key)
+        if existing is None or log_date >= (existing.get("latest_log_entry_date") or ""):
+            latest_by_endpoint[key] = row
+
+    status_by_org = defaultdict(lambda: {"name": "", "statuses": set()})
+    for (dataset, organisation, _endpoint), row in latest_by_endpoint.items():
+        entry = status_by_org[(dataset, organisation)]
+        entry["name"] = row["name"]
+        entry["statuses"].add(row.get("latest_status", "") or "")
+    return status_by_org
+
+
 def fetch_dataset_resources(session):
     """Fetch dataset_resource.csv for each dataset; return dict keyed by (dataset, resource)."""
     lookup = {}
@@ -156,7 +190,7 @@ def aggregate_counts(merged, inactive):
     """
     summary = defaultdict(lambda: {
         "entity_count": 0.0, "entry_count": 0, "line_count": 0,
-        "endpoints": set(), "resources": set(), "statuses": set(),
+        "endpoints": set(), "resources": set(),
     })
 
     for row in merged:
@@ -166,7 +200,6 @@ def aggregate_counts(merged, inactive):
         summary[key]["line_count"] += row["line_count"]
         summary[key]["endpoints"].add(row["endpoint"])
         summary[key]["resources"].add(row["resource"])
-        summary[key]["statuses"].add(row.get("latest_status", "") or "")
 
     inactive_summary = defaultdict(lambda: {"endpoints": set(), "resources": set()})
     for row in inactive:
@@ -179,7 +212,7 @@ def aggregate_counts(merged, inactive):
     for (dataset, name, organisation) in all_keys:
         vals = summary.get((dataset, name, organisation), {
             "entity_count": 0.0, "entry_count": 0, "line_count": 0,
-            "endpoints": set(), "resources": set(), "statuses": set(),
+            "endpoints": set(), "resources": set(),
         })
         inactive_vals = inactive_summary.get((dataset, name, organisation), {"endpoints": set(), "resources": set()})
         summary_rows.append({
@@ -193,7 +226,6 @@ def aggregate_counts(merged, inactive):
             "resource_count": len(vals["resources"]),
             "inactive_endpoint_count": len(inactive_vals["endpoints"]),
             "inactive_resource_count": len(inactive_vals["resources"]),
-            "endpoint_status": "; ".join(sorted(s for s in vals["statuses"] if s)),
         })
 
     detailed = defaultdict(lambda: {"entity_count": 0.0, "entry_count": 0, "line_count": 0, "endpoint_status": ""})
@@ -279,8 +311,8 @@ def fetch_platform_data_and_count(session, org_lookup):
     return result
 
 
-def outer_merge_and_compute_ratio(platform_counts, summary_counts):
-    """Outer merge platform entity counts with dataset_resource summary; compute ratio."""
+def outer_merge_and_compute_ratio(platform_counts, summary_counts, status_lookup):
+    """Outer merge platform entity counts, dataset_resource summary, and endpoint status; compute ratio."""
     platform_by_key = {}
     for row in platform_counts:
         key = (row["dataset"], row["name"], row["organisation"])
@@ -291,7 +323,12 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
         key = (row["dataset"], row["name"], row["organisation"])
         summary_by_key[key] = row
 
-    all_keys = set(platform_by_key.keys()) | set(summary_by_key.keys())
+    status_by_key = {}
+    for (dataset, organisation), info in status_lookup.items():
+        key = (dataset, info["name"], organisation)
+        status_by_key[key] = "; ".join(sorted(s for s in info["statuses"] if s))
+
+    all_keys = set(platform_by_key.keys()) | set(summary_by_key.keys()) | set(status_by_key.keys())
 
     result = []
     for key in sorted(all_keys):
@@ -306,7 +343,7 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
         dr_resource_count = summary.get("resource_count")
         dr_inactive_endpoint_count = summary.get("inactive_endpoint_count")
         dr_inactive_resource_count = summary.get("inactive_resource_count")
-        dr_endpoint_status = summary.get("endpoint_status")
+        endpoint_status = status_by_key.get(key, "")
 
         ratio = ""
         if platform_count is not None and dr_line_count and dr_line_count > 0:
@@ -324,7 +361,7 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
             "dataset_resource_resource_count": dr_resource_count if dr_resource_count is not None else "",
             "dataset_resource_inactive_endpoint_count": dr_inactive_endpoint_count if dr_inactive_endpoint_count is not None else "",
             "dataset_resource_inactive_resource_count": dr_inactive_resource_count if dr_inactive_resource_count is not None else "",
-            "endpoint_status": dr_endpoint_status if dr_endpoint_status is not None else "",
+            "endpoint_status": endpoint_status,
             "platform_divided_by_dr_line_count": ratio,
         })
     return result
@@ -336,6 +373,7 @@ def main(output_dir):
     # Fetch and filter historic endpoints
     all_rows = fetch_historic_endpoints(session)
     report_he, inactive_he = filter_and_deduplicate(all_rows)
+    status_lookup = build_endpoint_status_lookup(all_rows)
 
     # Fetch dataset_resource data and merge
     dr_lookup = fetch_dataset_resources(session)
@@ -349,7 +387,7 @@ def main(output_dir):
     platform_counts = fetch_platform_data_and_count(session, org_lookup)
 
     # Merge and compute ratio
-    final_summary = outer_merge_and_compute_ratio(platform_counts, summary_counts)
+    final_summary = outer_merge_and_compute_ratio(platform_counts, summary_counts, status_lookup)
 
     # Write outputs
     os.makedirs(output_dir, exist_ok=True)
