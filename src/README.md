@@ -46,6 +46,7 @@ Compares entity counts between the Platform and dataset_resource data for ODP da
 - Aggregates entity/entry/line counts per LPA
 - Fetches platform dataset CSVs and counts entities per organisation, excluding entities with quality "some"
 - Compares platform entity counts against dataset_resource line counts via a ratio
+- Carries through each endpoint's latest status (200, 404, etc, from reporting_historic_endpoints) so stale/broken endpoints are visible alongside their counts
 
 **Outputs:**
 

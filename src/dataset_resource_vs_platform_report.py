@@ -153,7 +153,7 @@ def aggregate_counts(merged, inactive):
     """
     summary = defaultdict(lambda: {
         "entity_count": 0.0, "entry_count": 0, "line_count": 0,
-        "endpoints": set(), "resources": set(),
+        "endpoints": set(), "resources": set(), "statuses": set(),
     })
 
     for row in merged:
@@ -163,6 +163,7 @@ def aggregate_counts(merged, inactive):
         summary[key]["line_count"] += row["line_count"]
         summary[key]["endpoints"].add(row["endpoint"])
         summary[key]["resources"].add(row["resource"])
+        summary[key]["statuses"].add(row.get("latest_status", "") or "")
 
     inactive_summary = defaultdict(lambda: {"endpoints": set(), "resources": set()})
     for row in inactive:
@@ -175,7 +176,7 @@ def aggregate_counts(merged, inactive):
     for (dataset, name, organisation) in all_keys:
         vals = summary.get((dataset, name, organisation), {
             "entity_count": 0.0, "entry_count": 0, "line_count": 0,
-            "endpoints": set(), "resources": set(),
+            "endpoints": set(), "resources": set(), "statuses": set(),
         })
         inactive_vals = inactive_summary.get((dataset, name, organisation), {"endpoints": set(), "resources": set()})
         summary_rows.append({
@@ -189,9 +190,10 @@ def aggregate_counts(merged, inactive):
             "resource_count": len(vals["resources"]),
             "inactive_endpoint_count": len(inactive_vals["endpoints"]),
             "inactive_resource_count": len(inactive_vals["resources"]),
+            "endpoint_status": "; ".join(sorted(s for s in vals["statuses"] if s)),
         })
 
-    detailed = defaultdict(lambda: {"entity_count": 0.0, "entry_count": 0, "line_count": 0})
+    detailed = defaultdict(lambda: {"entity_count": 0.0, "entry_count": 0, "line_count": 0, "endpoint_status": ""})
     for row in merged:
         key = (
             row["dataset"], row["name"], row["organisation"],
@@ -201,6 +203,7 @@ def aggregate_counts(merged, inactive):
         detailed[key]["entity_count"] += row["entity_count"]
         detailed[key]["entry_count"] += row["entry_count"]
         detailed[key]["line_count"] += row["line_count"]
+        detailed[key]["endpoint_status"] = row.get("latest_status", "") or ""
 
     detailed_rows = []
     for (dataset, name, org, endpoint, ep_date, resource, res_date), vals in detailed.items():
@@ -300,6 +303,7 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
         dr_resource_count = summary.get("resource_count")
         dr_inactive_endpoint_count = summary.get("inactive_endpoint_count")
         dr_inactive_resource_count = summary.get("inactive_resource_count")
+        dr_endpoint_status = summary.get("endpoint_status")
 
         ratio = ""
         if platform_count is not None and dr_line_count and dr_line_count > 0:
@@ -317,6 +321,7 @@ def outer_merge_and_compute_ratio(platform_counts, summary_counts):
             "dataset_resource_resource_count": dr_resource_count if dr_resource_count is not None else "",
             "dataset_resource_inactive_endpoint_count": dr_inactive_endpoint_count if dr_inactive_endpoint_count is not None else "",
             "dataset_resource_inactive_resource_count": dr_inactive_resource_count if dr_inactive_resource_count is not None else "",
+            "endpoint_status": dr_endpoint_status if dr_endpoint_status is not None else "",
             "platform_divided_by_dr_line_count": ratio,
         })
     return result
