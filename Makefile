@@ -11,6 +11,11 @@ init::;
 	test-unit \
 	test-acceptance
 
+test: test-unit
+
+test-unit:
+	pytest tests/
+
 make clobber:
 	rm -rf data/reporting
 

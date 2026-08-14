@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 .ipynb_checkpoints/
 .venv
+.python-version
 .cache
 .dummy
 .history/
