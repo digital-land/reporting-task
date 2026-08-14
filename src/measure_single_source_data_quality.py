@@ -147,6 +147,9 @@ def main() -> None:
         """,
     )
     org_lookup[["lpa_flag", "organisation_entity"]] = org_lookup[["lpa_flag", "organisation_entity"]].astype(int)
+    # end_date is '' (not SQL NULL) for an active org - normalise so .isnull() below works,
+    # same as pd.read_csv's default handling of a blank CSV field.
+    org_lookup["end_date"] = org_lookup["end_date"].replace("", None)
 
     # exclude organisations that have ended - a still-active endpoint record can linger in the
     # source data after an organisation's own end_date is set, and closed/merged organisations

@@ -25,15 +25,22 @@ def read_csv_with_retry(url: str, **kwargs) -> pd.DataFrame:
 
 
 def datasette_query(db: str, sql: str, filter: dict = None, url: str = DATASETTE_URL) -> pd.DataFrame:
-    """Executes an SQL query against a Datasette database and returns the result as a DataFrame."""
+    """
+    Executes an SQL query against a Datasette database and returns the result as a DataFrame.
+
+    Uses Datasette's default query shape (not _shape=array) so that column names survive
+    a zero-row result - with _shape=array, an empty result is a bare `[]` with no column
+    metadata, which silently drops columns that callers may downstream merge/filter on.
+    """
     full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
+    params = {"sql": sql, "_size": "max"}
     if filter:
         params.update(filter)
     session = get_http_session()
     response = session.get(full_url, params=params)
     response.raise_for_status()
-    return pd.DataFrame(response.json())
+    data = response.json()
+    return pd.DataFrame(data["rows"], columns=data["columns"])
 
 
 def datasette_query_paginated(db: str, sql: str, page_size: int = 1000, url: str = DATASETTE_URL) -> pd.DataFrame:
