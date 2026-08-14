@@ -206,8 +206,8 @@ def main() -> None:
         how="left",
         on=["organisation", "pipeline"],
     )
-    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].fillna(False).astype(bool)
-    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].fillna(False).astype(bool)
+    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].eq(True)
+    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].eq(True)
 
     qual_summary["quality_level"] = np.where(
         qual_summary["is_authoritative"], qual_summary["quality_rung"] + 3, qual_summary["quality_rung"]
@@ -244,7 +244,7 @@ def main() -> None:
     stale["is_stale"] = True
 
     qual_summary = qual_summary.merge(stale, how="left", on=["pipeline", "organisation"])
-    qual_summary["is_stale"] = qual_summary["is_stale"].fillna(False)
+    qual_summary["is_stale"] = qual_summary["is_stale"].eq(True)
 
     cap_mask = qual_summary["is_stale"] & (qual_summary["quality_level"] > 0)
     rung = np.where(qual_summary["is_authoritative"], qual_summary["quality_level"] - 3, qual_summary["quality_level"])

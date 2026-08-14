@@ -285,8 +285,8 @@ def main() -> None:
         how="left",
         on=["organisation", "pipeline"],
     )
-    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].fillna(False).astype(bool)
-    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].fillna(False).astype(bool)
+    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].eq(True)
+    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].eq(True)
 
     qual_summary["quality_level"] = np.where(
         qual_summary["is_authoritative"], qual_summary["quality_rung"] + 3, qual_summary["quality_rung"]
