@@ -12,7 +12,7 @@ The script:
 import os
 import pandas as pd
 import argparse
-from utils import get_http_session
+from utils import datasette_query, datasette_query_paginated
 
 # Dataset to Pipeline Map
 ALL_PIPELINES = {
@@ -25,27 +25,6 @@ ALL_PIPELINES = {
         "tree",
     ],
 }
-
-# Datasette Query Helpers
-def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
-    """
-    Executes SQL against a Datasette database and returns the result as a DataFrame.
-
-    Args:
-        db (str): The name of the Datasette database (e.g., 'digital-land').
-        sql (str): SQL query string to run.
-        url (str): Base URL of the Datasette instance.
-
-    Returns:
-        pd.DataFrame: The result set, or empty DataFrame on error.
-    """
-    full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array"}
-
-    http = get_http_session()
-    response = http.get(full_url, params=params)
-    response.raise_for_status()
-    return pd.DataFrame.from_dict(response.json())
 
 # Data Retrieval Functions
 def get_provisions():
@@ -69,20 +48,17 @@ def get_provisions():
           AND p.project = "open-digital-planning"
         GROUP BY p.organisation, p.cohort
     """
-    return get_datasette_query("digital-land", sql)
+    return datasette_query("digital-land", sql)
 
 
-def get_endpoints_chunk(offset: int) -> pd.DataFrame:
+def get_endpoints() -> pd.DataFrame:
     """
-    Retrieves a paginated chunk of endpoint reporting data.
-
-    Args:
-        offset (int): Pagination offset for the query.
+    Retrieves all endpoint reporting data using pagination.
 
     Returns:
-        pd.DataFrame: Chunk of endpoint data.
+        pd.DataFrame: Combined table of all endpoint metadata and status.
     """
-    sql = f"""
+    sql = """
         SELECT
             rle.organisation,
             rle.collection,
@@ -100,34 +76,10 @@ def get_endpoints_chunk(offset: int) -> pd.DataFrame:
             rle.resource_start_date,
             rle.resource_end_date
         FROM reporting_latest_endpoints rle
-        LIMIT 1000 OFFSET {offset}
     """
-    return get_datasette_query("performance", sql)
-
-
-def get_endpoints() -> pd.DataFrame:
-    """
-    Retrieves all endpoint reporting data using pagination.
-
-    Returns:
-        pd.DataFrame: Combined table of all endpoint metadata and status.
-    """
-    df_list = []
-    offset = 0
-
-    while True:
-        chunk = get_endpoints_chunk(offset)
-        if chunk.empty:
-            break
-        df_list.append(chunk)
-        if len(chunk) < 1000:
-            break
-        offset += 1000
-
-    if not df_list:
-        return pd.DataFrame()
-
-    df = pd.concat(df_list, ignore_index=True)
+    df = datasette_query_paginated("performance", sql, page_size=1000)
+    if df.empty:
+        return df
 
     # Normalise organisation codes (remove -eng suffix)
     df["organisation"] = df["organisation"].str.replace("-eng", "", regex=False)

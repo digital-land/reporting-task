@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import urllib.parse
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely.wkt
-from utils import read_csv_with_retry
+from utils import read_csv_with_retry, datasette_query, datasette_query_paginated
 
 ODP_DATASETS = [
     "conservation-area",
@@ -34,32 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     return parser.parse_args()
-
-
-def datasette_query(db: str, sql: str) -> pd.DataFrame:
-    params = urllib.parse.urlencode({"sql": sql, "_size": "max"})
-    return read_csv_with_retry(f"https://datasette.planning.data.gov.uk/{db}.csv?{params}")
-
-
-def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.DataFrame:
-    frames = []
-    offset = 0
-
-    while True:
-        page_sql = f"{sql}\nLIMIT {page_size} OFFSET {offset}"
-        page_df = datasette_query(db, page_sql)
-        if page_df.empty:
-            break
-
-        frames.append(page_df)
-
-        if len(page_df) < page_size:
-            break
-        offset += page_size
-
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
 
 
 def get_entity_quality(pipeline: str) -> pd.DataFrame:
@@ -199,6 +172,9 @@ def main() -> None:
         """,
     )
     org_lookup[["lpa_flag", "organisation_entity"]] = org_lookup[["lpa_flag", "organisation_entity"]].astype(int)
+    # end_date is '' (not SQL NULL) for an active org - normalise so .isnull() below works,
+    # same as pd.read_csv's default handling of a blank CSV field.
+    org_lookup["end_date"] = org_lookup["end_date"].replace("", None)
 
     # exclude organisations that have ended - a still-active endpoint or provision record can
     # linger in the source data after an organisation's own end_date is set, and closed/merged
@@ -309,8 +285,8 @@ def main() -> None:
         how="left",
         on=["organisation", "pipeline"],
     )
-    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].fillna(False).astype(bool)
-    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].fillna(False).astype(bool)
+    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].eq(True)
+    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].eq(True)
 
     qual_summary["quality_level"] = np.where(
         qual_summary["is_authoritative"], qual_summary["quality_rung"] + 3, qual_summary["quality_rung"]

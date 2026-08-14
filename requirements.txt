@@ -6,3 +6,5 @@ pyproj
 awscli
 requests
 pyarrow
+pytest
+requests-mock

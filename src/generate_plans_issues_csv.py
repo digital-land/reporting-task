@@ -7,7 +7,7 @@ a merged view of expected dataset performance per organisation.
 import os
 import pandas as pd
 import argparse
-from utils import get_http_session
+from utils import datasette_query, datasette_query_paginated
 
 # Plans Pipelines
 ALL_PIPELINES = [
@@ -17,15 +17,6 @@ ALL_PIPELINES = [
     "supplementary-plan",
     "waste-plan",
 ]
-
-# Datasette Query Helper
-def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
-    full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
-    http = get_http_session()
-    response = http.get(full_url, params=params)
-    response.raise_for_status()
-    return pd.DataFrame(response.json())
 
 # Provision Query
 def get_provisions():
@@ -39,10 +30,11 @@ def get_provisions():
           AND p.provision_reason = "statutory"
         GROUP BY p.organisation
     """
-    return get_datasette_query("digital-land", sql)
+    return datasette_query("digital-land", sql)
 
 # Issue Query (Paged)
-def get_issue_type_chunk(dataset_clause, offset):
+def get_full_issue_type_summary(pipelines):
+    dataset_clause = "WHERE " + " OR ".join(f"edits.dataset = '{p}'" for p in pipelines)
     sql = f"""
         SELECT
             edits.*,
@@ -58,23 +50,8 @@ def get_issue_type_chunk(dataset_clause, offset):
             FROM endpoint_dataset_summary
         ) eds ON edits.endpoint = eds.endpoint AND edits.dataset = eds.dataset
         {dataset_clause}
-        LIMIT 1000 OFFSET {offset}
     """
-    return get_datasette_query("performance", sql)
-
-def get_full_issue_type_summary(pipelines):
-    dataset_clause = "WHERE " + " OR ".join(f"edits.dataset = '{p}'" for p in pipelines)
-    df_list = []
-    offset = 0
-    while True:
-        chunk = get_issue_type_chunk(dataset_clause, offset)
-        if chunk.empty:
-            break
-        df_list.append(chunk)
-        if len(chunk) < 1000:
-            break
-        offset += 1000
-    return pd.concat(df_list, ignore_index=True)
+    return datasette_query_paginated("performance", sql, page_size=1000)
 
 # Main CSV Generator
 def generate_plans_issues_csv(output_dir: str) -> str:

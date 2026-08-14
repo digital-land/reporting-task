@@ -9,7 +9,7 @@ with organisation names.
 import pandas as pd
 import os
 import logging
-from utils import read_csv_with_retry
+from utils import read_csv_with_retry, fetch_datasette_csv_table
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,6 @@ FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 ## Using CSVs as the 'listed-building' column is only available in the CSV format
 LISTED_BUILDING_URL = f"{FILES_URL}/dataset/listed-building.csv?_stream=on"
 LISTED_BUILDING_OUTLINE_URL = f"{FILES_URL}/dataset/listed-building-outline.csv?_stream=on"
-ORG_URL = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
 
 
 def main(output_dir: str):
@@ -79,7 +78,7 @@ def main(output_dir: str):
     # Load and merge organisation data
     # ---------------------------------------------------------------
     try:
-        df_org = read_csv_with_retry(ORG_URL, low_memory=False)
+        df_org = fetch_datasette_csv_table("organisation", low_memory=False)
         df_org = df_org[["entity", "organisation"]].rename(columns={"entity": "organisation-entity"}).copy()
 
         df_final = pd.merge(

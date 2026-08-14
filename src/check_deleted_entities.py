@@ -2,7 +2,7 @@ import pandas as pd
 import json
 import os
 import logging
-from utils import get_http_session
+from utils import follow_datasette_next_url, fetch_datasette_csv_table
 
 logger = logging.getLogger(__name__)
 
@@ -10,30 +10,6 @@ FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # URLs for data sources
 ENDPOINT_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.json?passed__exact=False&operation__exact=count_deleted_entities&_sort=rowid&_size=max"
-ORG_URL = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
-
-
-def fetch_all_expectations(session):
-    """
-    Fetch all failed count_deleted_entities expectations, following next_url.
-
-    Datasette caps _size=max at 1000 rows per request regardless of how many rows
-    match, so a single request silently truncates results (here, to the first
-    1000 of 1XXX rows) rather than raising an error - the response's next_url
-    must be followed until it's exhausted.
-    """
-    rows = []
-    columns = None
-    url = ENDPOINT_URL
-    while url:
-        response = session.get(url)
-        response.raise_for_status()
-        data = response.json()
-        if columns is None:
-            columns = data['columns']
-        rows.extend(data['rows'])
-        url = data.get('next_url')
-    return pd.DataFrame(rows, columns=columns)
 
 
 def main(output_dir: str):
@@ -44,7 +20,7 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     # Load and filter expectations
     # ---------------------------------------------------------------
-    df = fetch_all_expectations(get_http_session())
+    df = follow_datasette_next_url(ENDPOINT_URL)
     df_filtered = df[['dataset', 'organisation', 'details']].copy()
 
     # Parse JSON and extract entities list
@@ -63,7 +39,7 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     # Load and merge organisation data
     # ---------------------------------------------------------------
-    df_org = pd.read_csv(ORG_URL)
+    df_org = fetch_datasette_csv_table("organisation")
     df_org = df_org[['entity', 'organisation', 'name']].copy()
     df_org = df_org.rename(
         columns={

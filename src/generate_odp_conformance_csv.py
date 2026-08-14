@@ -12,7 +12,7 @@ from urllib.request import urlretrieve
 from pathlib import Path
 import argparse
 import os
-from utils import get_http_session
+from utils import datasette_query, datasette_query_paginated
 
 logger = logging.getLogger(__name__)
 
@@ -37,28 +37,6 @@ def parse_args():
         help="Directory to save specification"
     )
     return parser.parse_args()
-
-def get_datasette_query(db, sql, filter=None, url="https://datasette.planning.data.gov.uk"):
-    """
-    Executes an SQL query against a Datasette database and returns the result as a DataFrame.
-
-    Args:
-        db (str): The database name (e.g. 'digital-land')
-        sql (str): SQL query string
-        filter (dict, optional): Additional query parameters
-        url (str): Base Datasette URL
-
-    Returns:
-        pd.DataFrame | None: Query result as a DataFrame or None on failure
-    """
-    url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
-    if filter:
-        params.update(filter)
-    http = get_http_session()
-    resp = http.get(url, params=params)
-    resp.raise_for_status()
-    return pd.DataFrame.from_dict(resp.json())
 
 def get_provisions(selected_cohorts, all_cohorts):
     """
@@ -105,7 +83,7 @@ def get_provisions(selected_cohorts, all_cohorts):
         cohort_start_date,
         p.cohort
     """
-    provision_df = get_datasette_query("digital-land", sql)
+    provision_df = datasette_query("digital-land", sql)
     return provision_df
 
 SPATIAL_DATASETS = [
@@ -151,13 +129,12 @@ COHORTS = [
 ]
 
 
-def get_column_field_summary(dataset_clause, offset):
+def get_column_field_summary(dataset_clause):
     """
     Retrieves endpoint dataset resource summaries for datasets matching the clause.
 
     Args:
         dataset_clause (str): SQL filter for datasets (e.g. "edrs.pipeline = 'tree'")
-        offset (int): Row offset for pagination
 
     Returns:
         pd.DataFrame: Results from `endpoint_dataset_resource_summary` joined with endpoint metadata.
@@ -176,20 +153,16 @@ def get_column_field_summary(dataset_clause, offset):
     WHERE edrs.resource != ''
     and eds.endpoint_end_date=''
     and ({dataset_clause})
-    limit 1000 offset {offset}
     """
-    column_field_df = get_datasette_query("performance", sql)
-
-    return column_field_df
+    return datasette_query_paginated("performance", sql, page_size=1000)
 
 
-def get_issue_summary(dataset_clause, offset):
+def get_issue_summary(dataset_clause):
     """
     Retrieves summarised issue counts per dataset and endpoint.
 
     Args:
         dataset_clause (str): SQL WHERE clause to filter datasets.
-        offset (int): Pagination offset for result set.
 
     Returns:
         pd.DataFrame: Issue summary from Datasette.
@@ -197,10 +170,8 @@ def get_issue_summary(dataset_clause, offset):
     sql = f"""
     select  * from endpoint_dataset_issue_type_summary edrs
     where ({dataset_clause})
-    limit 1000 offset {offset}
     """
-    issue_summary_df = get_datasette_query("performance", sql)
-    return issue_summary_df
+    return datasette_query_paginated("performance", sql, page_size=1000)
 
 
 def get_odp_conformance_summary(dataset_types, cohorts, specification_path):
@@ -235,19 +206,10 @@ def get_odp_conformance_summary(dataset_types, cohorts, specification_path):
     provision_df = get_provisions(cohorts, COHORTS)
 
     # Download column field summary table
-    # Use pagination in case rows returned > 1000
-    pagination_incomplete = True
-    offset = 0
-    column_field_df_list = []
-    while pagination_incomplete:
-        column_field_df = get_column_field_summary(dataset_clause, offset)
-        column_field_df_list.append(column_field_df)
-        pagination_incomplete = len(column_field_df) == 1000
-        offset += 1000
-    if len(column_field_df_list) == 0:
+    column_field_df = get_column_field_summary(dataset_clause)
+    if column_field_df.empty:
         return {"params": params, "rows": [], "headers": []}
-    column_field_df = pd.concat(column_field_df_list)
-      
+
     column_field_df = pd.merge(
         column_field_df, provision_df, on=["organisation", "cohort"], how="left"
     )
@@ -257,15 +219,7 @@ def get_odp_conformance_summary(dataset_types, cohorts, specification_path):
     column_field_df["cohort_start_date"] = column_field_df["cohort_start_date"].fillna("")
 
     # Download issue summary table
-    pagination_incomplete = True
-    offset = 0
-    issue_df_list = []
-    while pagination_incomplete:
-        issue_df = get_issue_summary(dataset_clause, offset)
-        issue_df_list.append(issue_df)
-        pagination_incomplete = len(issue_df) == 1000
-        offset += 1000
-    issue_df = pd.concat(issue_df_list)
+    issue_df = get_issue_summary(dataset_clause)
 
     dataset_field_df = get_dataset_field(specification_path)
 

@@ -3,13 +3,10 @@ import ast
 import argparse
 import os
 import logging
-from utils import read_csv_with_retry
+from utils import read_csv_with_retry, fetch_datasette_csv_table
 logger = logging.getLogger(__name__)
 
 FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
-
-# Load expectations table
-EXPECTATIONS_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.csv?_stream=on"
 
 # Entity tables to enrich A/B sides
 ENTITY_URLS = {
@@ -30,9 +27,6 @@ LOOKUP_URLS = {
     "tree": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
 }
 
-# Load provision table to check if LPA is in ODP
-ODP_URL = "https://datasette.planning.data.gov.uk/digital-land/provision.csv?_stream=on"
-
 
 def parse_details(val):
     try:
@@ -45,7 +39,7 @@ def main(output_dir: str):
     # ------------------------------------------------------------
     # Load and filter expectations
     # ------------------------------------------------------------
-    df = pd.read_csv(EXPECTATIONS_URL, low_memory=False)
+    df = fetch_datasette_csv_table("expectation", low_memory=False)
     df = df[df["operation"] == "duplicate_geometry_check"].copy()
     if df.empty:
         os.makedirs(output_dir, exist_ok=True)
@@ -153,7 +147,7 @@ def main(output_dir: str):
     # Load orgs lookup
     # ------------------------------------------------------------
     df_orgs = (
-        pd.read_csv(ORGS_URL, low_memory=False)[["entity", "name"]]
+        read_csv_with_retry(ORGS_URL, low_memory=False)[["entity", "name"]]
         .rename(columns={"entity": "organisation_entity", "name": "organisation_name"})
         .copy()
     )
@@ -288,7 +282,7 @@ def main(output_dir: str):
     # Check if entity B organisation is in ODP
     # ------------------------------------------------------------
     try:
-        df_provision = pd.read_csv(ODP_URL, low_memory=False)
+        df_provision = fetch_datasette_csv_table("provision", low_memory=False)
         # Get organisations that are in the open-digital-planning project
         odp_orgs = set(df_provision[df_provision["project"] == "open-digital-planning"]["organisation"].unique())
         df_matches["in_odp"] = df_matches["lookup_org_b"].isin(odp_orgs)
