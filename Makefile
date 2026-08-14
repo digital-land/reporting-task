@@ -14,7 +14,7 @@ init::;
 test: test-unit
 
 test-unit:
-	pytest tests/
+	pytest tests/unit/
 
 make clobber:
 	rm -rf data/reporting
