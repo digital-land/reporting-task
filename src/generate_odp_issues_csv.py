@@ -7,7 +7,7 @@ of expected dataset performance per organisation and cohort.
 import os
 import pandas as pd
 import argparse
-from utils import get_http_session
+from utils import datasette_query, datasette_query_paginated
 
 # Dataset Definitions
 SPATIAL_DATASETS = [
@@ -23,26 +23,6 @@ DOCUMENT_DATASETS = [
     "tree-preservation-order",
 ]
 ALL_DATASETS = SPATIAL_DATASETS + DOCUMENT_DATASETS
-
-# Datasette Query Helper
-def get_datasette_query(db: str, sql: str, url="https://datasette.planning.data.gov.uk") -> pd.DataFrame:
-    """
-    Executes an SQL query against the specified Datasette database.
-
-    Args:
-        db (str): Datasette database name.
-        sql (str): SQL query string.
-        url (str): Base Datasette URL.
-
-    Returns:
-        pd.DataFrame: Resulting data as a DataFrame, or empty on failure.
-    """
-    full_url = f"{url}/{db}.json"
-    params = {"sql": sql, "_shape": "array", "_size": "max"}
-    http = get_http_session()
-    response = http.get(full_url, params=params)
-    response.raise_for_status()
-    return pd.DataFrame(response.json())
 
 # Provision Query
 def get_provisions():
@@ -65,20 +45,20 @@ def get_provisions():
           AND p.project = 'open-digital-planning'
         GROUP BY p.organisation, p.cohort
     """
-    return get_datasette_query("digital-land", sql)
+    return datasette_query("digital-land", sql)
 
 # Issue Query (Paged)
-def get_issue_type_chunk(dataset_clause, offset):
+def get_full_issue_type_summary(datasets):
     """
-    Retrieves a paged chunk of issue type summaries joined with endpoint metadata.
+    Retrieves the full issue summary table across all datasets using pagination.
 
     Args:
-        dataset_clause (str): SQL clause to filter datasets.
-        offset (int): Pagination offset for the query.
+        datasets (list): List of dataset names to include.
 
     Returns:
-        pd.DataFrame: Chunk of issue summary data.
+        pd.DataFrame: Combined issue summary for all specified datasets.
     """
+    dataset_clause = "WHERE " + " OR ".join(f"edits.dataset = '{ds}'" for ds in datasets)
     sql = f"""
         SELECT
             edits.*,
@@ -94,32 +74,8 @@ def get_issue_type_chunk(dataset_clause, offset):
             FROM endpoint_dataset_summary
         ) eds ON edits.endpoint = eds.endpoint
         {dataset_clause}
-        LIMIT 1000 OFFSET {offset}
     """
-    return get_datasette_query("performance", sql)
-
-def get_full_issue_type_summary(datasets):
-    """
-    Retrieves the full issue summary table across all datasets using pagination.
-
-    Args:
-        datasets (list): List of dataset names to include.
-
-    Returns:
-        pd.DataFrame: Combined issue summary for all specified datasets.
-    """
-    dataset_clause = "WHERE " + " OR ".join(f"edits.dataset = '{ds}'" for ds in datasets)
-    df_list = []
-    offset = 0
-    while True:
-        chunk = get_issue_type_chunk(dataset_clause, offset)
-        if chunk.empty:
-            break
-        df_list.append(chunk)
-        if len(chunk) < 1000:
-            break
-        offset += 1000
-    return pd.concat(df_list, ignore_index=True)
+    return datasette_query_paginated("performance", sql, page_size=1000)
 
 # Main CSV Generator
 def generate_detailed_issue_csv(output_dir: str, dataset_type="all") -> str:

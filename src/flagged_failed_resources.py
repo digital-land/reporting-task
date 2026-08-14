@@ -11,7 +11,7 @@ import os
 import argparse
 import pandas as pd
 import requests
-from utils import get_http_session, read_csv_with_retry
+from utils import get_http_session, read_csv_with_retry, fetch_datasette_csv_table
 
 def is_pdf_url(url):
     """Check if URL points to a PDF by sending a HEAD request and inspecting Content-Type."""
@@ -94,9 +94,9 @@ def main(output_dir):
     df_failed = read_csv_with_retry(csv_url)
 
     # Supporting metadata
-    df_endpoint = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/endpoint.csv?_stream=on", low_memory=False)[["endpoint", "endpoint_url"]]
-    df_resource_endpoint = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/resource_endpoint.csv?_stream=on", low_memory=False)[["endpoint", "resource"]]
-    df_source_raw = read_csv_with_retry("https://datasette.planning.data.gov.uk/digital-land/source.csv?_stream=on", low_memory=False)
+    df_endpoint = fetch_datasette_csv_table("endpoint", low_memory=False)[["endpoint", "endpoint_url"]]
+    df_resource_endpoint = fetch_datasette_csv_table("resource_endpoint", low_memory=False)[["endpoint", "resource"]]
+    df_source_raw = fetch_datasette_csv_table("source", low_memory=False)
     df_source_raw["organisation_ref"] = df_source_raw["organisation"].str.replace(r"^.*?:", "", regex=True).astype(str)
     df_source = df_source_raw[["endpoint", "source", "collection", "organisation_ref"]]
 

@@ -7,7 +7,7 @@ import argparse
 import os
 import time
 import logging
-from utils import get_http_session, read_csv_with_retry
+from utils import get_http_session, fetch_datasette_csv_table
 
 # ---------------------------------------
 # Config
@@ -122,8 +122,7 @@ def build_dataset(output_dir):
     total_slug_df = build_total_slug_df(slugs, base_host=BASE_HOST, wanted_cols=WANTED)
 
     # 2) Organisations (ENDED ONLY: end_date IS NOT NULL)
-    orgs_url = f"{BASE_HOST}/digital-land/organisation.csv?_stream=on"
-    orgs_df = read_csv_with_retry(orgs_url, low_memory=False)
+    orgs_df = fetch_datasette_csv_table("organisation", low_memory=False)
 
     ended_orgs_df = (
         orgs_df.loc[orgs_df["end_date"].notna(), ["name", "entity", "reference", "dataset", "end_date"]]

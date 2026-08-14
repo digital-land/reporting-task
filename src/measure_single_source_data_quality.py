@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import argparse
 import os
-import urllib.parse
 
 import numpy as np
 import pandas as pd
-from utils import read_csv_with_retry
+from utils import datasette_query, datasette_query_paginated
 
 STALENESS_AGE_DAYS = 365
 
@@ -26,32 +25,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     return parser.parse_args()
-
-
-def datasette_query(db: str, sql: str) -> pd.DataFrame:
-    params = urllib.parse.urlencode({"sql": sql, "_size": "max"})
-    return read_csv_with_retry(f"https://datasette.planning.data.gov.uk/{db}.csv?{params}")
-
-
-def datasette_query_paginated(db: str, sql: str, page_size: int = 1000) -> pd.DataFrame:
-    frames = []
-    offset = 0
-
-    while True:
-        page_sql = f"{sql}\nLIMIT {page_size} OFFSET {offset}"
-        page_df = datasette_query(db, page_sql)
-        if page_df.empty:
-            break
-
-        frames.append(page_df)
-
-        if len(page_df) < page_size:
-            break
-        offset += page_size
-
-    if not frames:
-        return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
 
 
 def get_entity_quality(pipeline: str) -> pd.DataFrame:
