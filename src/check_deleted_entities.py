@@ -13,6 +13,29 @@ ENDPOINT_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.
 ORG_URL = "https://datasette.planning.data.gov.uk/digital-land/organisation.csv?_stream=on"
 
 
+def fetch_all_expectations(session):
+    """
+    Fetch all failed count_deleted_entities expectations, following next_url.
+
+    Datasette caps _size=max at 1000 rows per request regardless of how many rows
+    match, so a single request silently truncates results (here, to the first
+    1000 of 1XXX rows) rather than raising an error - the response's next_url
+    must be followed until it's exhausted.
+    """
+    rows = []
+    columns = None
+    url = ENDPOINT_URL
+    while url:
+        response = session.get(url)
+        response.raise_for_status()
+        data = response.json()
+        if columns is None:
+            columns = data['columns']
+        rows.extend(data['rows'])
+        url = data.get('next_url')
+    return pd.DataFrame(rows, columns=columns)
+
+
 def main(output_dir: str):
     """
     Fetch deleted entities from expectations, enrich with entity metadata from parquet files.
@@ -21,10 +44,7 @@ def main(output_dir: str):
     # ---------------------------------------------------------------
     # Load and filter expectations
     # ---------------------------------------------------------------
-    response = get_http_session().get(ENDPOINT_URL)
-    response.raise_for_status()
-    data = response.json()
-    df = pd.DataFrame(data['rows'], columns=data['columns'])
+    df = fetch_all_expectations(get_http_session())
     df_filtered = df[['dataset', 'organisation', 'details']].copy()
 
     # Parse JSON and extract entities list
