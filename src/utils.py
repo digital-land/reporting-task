@@ -1,11 +1,22 @@
+import logging
 import os
+import time
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import StringIO
 import pandas as pd
 
+logger = logging.getLogger(__name__)
+
 DATASETTE_URL = os.environ.get("DATASETTE_URL", "https://datasette.planning.data.gov.uk")
+
+# datasette has occasionally returned a 400, or a 200 with an empty body, for requests that
+# succeed a moment later when retried - neither is caught by get_http_session's transport-level
+# retry (which only covers 502/503/504 and connection errors), so callers get a request-level
+# retry here instead.
+EMPTY_RESPONSE_RETRY_ATTEMPTS = 4
+EMPTY_RESPONSE_RETRY_BACKOFF_SECONDS = 2
 
 
 def get_http_session() -> requests.Session:
@@ -16,11 +27,49 @@ def get_http_session() -> requests.Session:
     return session
 
 
+def _is_retryable_response(response: requests.Response) -> bool:
+    if response.status_code == 400:
+        return True
+    return response.status_code == 200 and not response.text.strip()
+
+
+def get_with_retry(session: requests.Session, url: str, params: dict = None) -> requests.Response:
+    """
+    GET a URL, retrying (with backoff) on a 400 or an empty-bodied 200 - both observed from
+    datasette as transient, alongside the 502/503/504s get_http_session already retries at the
+    transport level. Raises the real HTTPError, or a RuntimeError naming the URL for a
+    persistently empty body, once attempts are exhausted.
+
+    Datasette sits behind CloudFront, which has been observed caching a broken empty response
+    for a given query string and serving that same stale entry on every subsequent request -
+    retrying the identical URL just hits the same cache entry, so retries add a cache-busting
+    param to force a fresh request past the cache once the first attempt looks bad.
+    """
+    response = None
+    for attempt in range(1, EMPTY_RESPONSE_RETRY_ATTEMPTS + 1):
+        request_params = dict(params or {})
+        if attempt > 1:
+            request_params["_cb"] = f"{time.time()}-{attempt}"
+        response = session.get(url, params=request_params)
+        if not _is_retryable_response(response):
+            break
+        if attempt < EMPTY_RESPONSE_RETRY_ATTEMPTS:
+            logger.warning(
+                "Retrying %s after status %s empty/bad response (attempt %d/%d)",
+                url, response.status_code, attempt, EMPTY_RESPONSE_RETRY_ATTEMPTS,
+            )
+            time.sleep(EMPTY_RESPONSE_RETRY_BACKOFF_SECONDS * attempt)
+
+    if response.status_code == 200 and not response.text.strip():
+        raise RuntimeError(f"Empty response from {url} after {EMPTY_RESPONSE_RETRY_ATTEMPTS} attempts")
+    response.raise_for_status()
+    return response
+
+
 def read_csv_with_retry(url: str, **kwargs) -> pd.DataFrame:
     """Fetch a CSV from a URL with retry logic and parse into a DataFrame."""
     session = get_http_session()
-    response = session.get(url)
-    response.raise_for_status()
+    response = get_with_retry(session, url)
     return pd.read_csv(StringIO(response.text), **kwargs)
 
 
@@ -37,8 +86,7 @@ def datasette_query(db: str, sql: str, filter: dict = None, url: str = DATASETTE
     if filter:
         params.update(filter)
     session = get_http_session()
-    response = session.get(full_url, params=params)
-    response.raise_for_status()
+    response = get_with_retry(session, full_url, params=params)
     data = response.json()
     return pd.DataFrame(data["rows"], columns=data["columns"])
 
@@ -77,8 +125,7 @@ def follow_datasette_next_url(url: str, session: requests.Session = None) -> pd.
     rows = []
     columns = None
     while url:
-        response = session.get(url)
-        response.raise_for_status()
+        response = get_with_retry(session, url)
         data = response.json()
         if columns is None:
             columns = data["columns"]
