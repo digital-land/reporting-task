@@ -265,21 +265,23 @@ Summarises endpoint request status codes (200 vs failed) by week over the last 6
 
 ### measure_odp_mandated_data_quality.py
 
-Generates ODP + mandated dataset quality reporting outputs for provider and dataset coverage.
+Generates ODP and mandated dataset quality reporting outputs for provider and dataset coverage, as separate ODP and mandated CSV pairs.
 
 **What it does:**
 
-- Builds quality scores for each provider across ODP datasets plus mandated datasets (statutory, or "encouraged" specifically for LPAs - computed live from `provision_rule` rather than hardcoded)
+- Builds quality scores for each provider across ODP datasets and mandated datasets (statutory, or "encouraged" specifically for LPAs - computed live from `provision_rule` rather than hardcoded)
 - Determines authoritative sourcing from each dataset's own entity-level `quality` signal (rather than a geospatial join)
 - Combines authoritative status with issue severity into a 0-6 quality level (authoritative axis x rung axis), plus criteria pass/fail detail
-- Produces an LPA-by-dataset quality summary table covering ODP + mandated dataset columns - organisations with no ODP provision of their own (e.g. a mandated-dataset-only provider) get a blank `cohort`/`start_date`
-- Produces a dataset quality criteria detail table by provider
-- Writes both reporting tables as CSV files
+- Produces an LPA-by-dataset quality summary table for ODP datasets (with `cohort`/`start_date` and a `ready_for_ODP_adoption` flag) and a separate one for mandated datasets (which have no cohort/provision concept)
+- Produces a dataset quality criteria detail table by provider, again as separate ODP and mandated tables
+- Writes all four reporting tables as CSV files
 
 **Outputs:**
 
-- `quality_ODP_mandated_dataset_scores_by_LPA.csv`
-- `quality_ODP_mandated_dataset_quality_detail.csv`
+- `quality_ODP_dataset_scores_by_LPA.csv`
+- `quality_mandated_dataset_scores_by_LPA.csv`
+- `quality_ODP_dataset_quality_detail.csv`
+- `quality_mandated_dataset_quality_detail.csv`
 
 **Run:** `python src/measure_odp_mandated_data_quality.py --output-dir <directory>` (or `python3` depending on your system setup)
 

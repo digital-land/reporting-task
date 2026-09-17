@@ -67,7 +67,7 @@ data/reporting/logs_by_week.csv:
 data/reporting/odp_conformance.csv:
 	python src/generate_odp_conformance_csv.py --output-dir data/reporting --specification-dir data/specification
 
-data/reporting/quality_ODP_mandated_dataset_scores_by_LPA.csv data/reporting/quality_ODP_mandated_dataset_quality_detail.csv: data/reporting
+data/reporting/quality_ODP_dataset_scores_by_LPA.csv data/reporting/quality_mandated_dataset_scores_by_LPA.csv data/reporting/quality_ODP_dataset_quality_detail.csv data/reporting/quality_mandated_dataset_quality_detail.csv: data/reporting
 	python src/measure_odp_mandated_data_quality.py --output-dir data/reporting
 
 data/reporting/quality_single_source_dataset_quality_detail.csv: data/reporting
@@ -104,8 +104,10 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/logs_by_week.csv \
 	data/reporting/runaway_resources.csv \
 	data/reporting/odp_conformance.csv \
-	data/reporting/quality_ODP_mandated_dataset_scores_by_LPA.csv \
-	data/reporting/quality_ODP_mandated_dataset_quality_detail.csv \
+	data/reporting/quality_ODP_dataset_scores_by_LPA.csv \
+	data/reporting/quality_mandated_dataset_scores_by_LPA.csv \
+	data/reporting/quality_ODP_dataset_quality_detail.csv \
+	data/reporting/quality_mandated_dataset_quality_detail.csv \
 	data/reporting/quality_single_source_dataset_quality_detail.csv \
 	data/reporting/entities_with_ended_orgs.csv \
 	data/reporting/ended_orgs_active_endpoints.csv

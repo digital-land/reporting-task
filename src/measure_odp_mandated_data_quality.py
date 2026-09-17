@@ -1,9 +1,9 @@
 """
-Builds two ODP quality CSV reports (covering ODP datasets plus "mandated" datasets) by
-combining active endpoint issue data, provision/organisation lookups, and each dataset's own
+Builds four quality CSV reports - an ODP pair and a "mandated" dataset pair - by combining
+active endpoint issue data, provision/organisation lookups, and each dataset's own
 entity-level `quality` signal (rather than a geospatial join) to determine authoritative sourcing.
 It maps issues to quality criteria, calculates provider-dataset quality levels on a 0-6 scale
-(authoritative axis x rung axis) plus criteria pass/fail detail, writes the two CSV outputs.
+(authoritative axis x rung axis) plus criteria pass/fail detail, writes the four CSV outputs.
 """
 
 from __future__ import annotations
@@ -119,10 +119,10 @@ def main() -> None:
     ).rename(columns={"dataset": "pipeline"})
 
     # "mandated" datasets (statutory, or "encouraged" specifically for LPAs) - computed live
-    # from provision_rule rather than hardcoded, since this list can change over time. Both
-    # the detail and scores-by-LPA CSVs now cover ODP_DATASETS + mandated_datasets; since
-    # mandated datasets have no "cohort" concept in the provision table, organisations with
-    # no ODP provision of their own get a blank cohort/start_date in the scores-by-LPA CSV.
+    # from provision_rule rather than hardcoded, since this list can change over time. ODP and
+    # mandated datasets are reported as separate CSV pairs below, since mandated datasets have
+    # no "cohort"/provision concept and no expected-provision list to backfill missing
+    # organisations against, unlike ODP.
     provision_rule = datasette_query(
         "digital-land",
         "SELECT dataset, project, provision_reason, role FROM provision_rule",
@@ -132,7 +132,6 @@ def main() -> None:
         | ((provision_rule["provision_reason"] == "encouraged") & (provision_rule["role"] == "local-planning-authority")),
         "dataset",
     ]))
-    detail_datasets = ODP_DATASETS + mandated_datasets
 
     quality_lookup = datasette_query("digital-land", "SELECT quality, priority FROM quality")
     quality_priority = dict(zip(quality_lookup["quality"], quality_lookup["priority"]))
@@ -315,13 +314,12 @@ def main() -> None:
     qual_summary.loc[zero_entity_mask, "quality_level_label"] = level_map[0]
     qual_summary = qual_summary.drop(columns=["has_entities"])
 
-    # subset to ODP + mandated datasets and pivot. cohort/start_date are an organisation-level
-    # attribute of ODP provision (constant across an org's ODP pipelines), not a per-pipeline
-    # one, so they're looked up per-organisation and left blank for organisations with no ODP
-    # provision of their own (e.g. a mandated-dataset-only provider).
+    # subset to ODP datasets and pivot for the ODP scores-by-LPA CSV. cohort/start_date are an
+    # organisation-level attribute of ODP provision (constant across an org's ODP pipelines),
+    # not a per-pipeline one, so they're looked up per-organisation.
     org_cohort_lookup = provision[["organisation", "cohort", "start_date"]].drop_duplicates()
 
-    odp_lpa_summary = qual_summary[qual_summary["pipeline"].isin(detail_datasets)].merge(
+    odp_lpa_summary = qual_summary[qual_summary["pipeline"].isin(ODP_DATASETS)].merge(
         org_cohort_lookup,
         how="left",
         on="organisation",
@@ -336,14 +334,14 @@ def main() -> None:
         .reset_index()
         .sort_values(["cohort", "organisation_name"])
     )
-    # fill missing pipeline scores with "0. no data", but leave cohort/start_date NaN (blank)
-    # for organisations with no ODP provision of their own
-    pipeline_cols = [c for c in odp_lpa_summary_wide.columns if c not in ["cohort", "start_date", "organisation", "organisation_name"]]
-    odp_lpa_summary_wide[pipeline_cols] = odp_lpa_summary_wide[pipeline_cols].fillna("0. no data")
+    # fill missing pipeline scores with "0. no data"
+    odp_pipeline_cols = [c for c in odp_lpa_summary_wide.columns if c not in ["cohort", "start_date", "organisation", "organisation_name"]]
+    odp_lpa_summary_wide[odp_pipeline_cols] = odp_lpa_summary_wide[odp_pipeline_cols].fillna("0. no data")
 
     # flag whether LPAs are "ready for ODP" (must be in the authoritative branch for all
     # geography datasets) - min_quality_level >= 4 means every geography dataset must be in
-    # the authoritative branch (4-6), replacing the old 1-4 scale's >= 2 threshold
+    # the authoritative branch (4-6), replacing the old 1-4 scale's >= 2 threshold. This is an
+    # ODP-only concept, so it only appears in the ODP scores-by-LPA CSV.
     ready = qual_summary[
         qual_summary["pipeline"].isin(
             [
@@ -369,6 +367,19 @@ def main() -> None:
         on="organisation",
     )
     odp_lpa_summary_wide["ready_for_ODP_adoption"] = odp_lpa_summary_wide["ready_for_ODP_adoption"].fillna("no")
+
+    # subset to mandated datasets and pivot for the mandated scores-by-LPA CSV. Mandated
+    # datasets have no "cohort"/provision concept and no expected-provision list to backfill
+    # missing organisations against (unlike ODP below), so this is a simple pivot of whatever
+    # live data exists.
+    mandated_lpa_summary_wide = (
+        qual_summary[qual_summary["pipeline"].isin(mandated_datasets)]
+        .pivot(columns="pipeline", values="quality_level_label", index=["organisation", "organisation_name"])
+        .reset_index()
+        .sort_values("organisation_name")
+    )
+    mandated_pipeline_cols = [c for c in mandated_lpa_summary_wide.columns if c not in ["organisation", "organisation_name"]]
+    mandated_lpa_summary_wide[mandated_pipeline_cols] = mandated_lpa_summary_wide[mandated_pipeline_cols].fillna("0. no data")
 
     qual_cat_count = qual_all.groupby(
         ["pipeline", "organisation", "organisation_name", "quality_criteria"],
@@ -407,7 +418,7 @@ def main() -> None:
     )
 
     odp_qual_summary = qual_cat_summary_wide[
-        qual_cat_summary_wide["pipeline"].isin(detail_datasets)
+        qual_cat_summary_wide["pipeline"].isin(ODP_DATASETS)
     ].copy()
 
     odp_qual_summary = odp_qual_summary.merge(
@@ -447,15 +458,15 @@ def main() -> None:
 
     if len(missing_combos) > 0:
         missing_rows = missing_combos.copy()
-        for col in detail_datasets:
+        for col in ODP_DATASETS:
             missing_rows[col] = "0. no data"
         missing_rows["ready_for_ODP_adoption"] = "no"
         odp_lpa_summary_wide = pd.concat([odp_lpa_summary_wide, missing_rows], ignore_index=True)
         odp_lpa_summary_wide = odp_lpa_summary_wide.sort_values(["cohort", "organisation_name"]).reset_index(drop=True)
 
-    # Add missing org+pipeline combos to detail CSV (ODP-only, same as before - there's no
-    # equivalent "expected provision" list in the `provision` table to backfill against for
-    # mandated datasets, which only ever appear in the detail CSV where they have live data)
+    # Add missing org+pipeline combos to the ODP detail CSV - there's no equivalent "expected
+    # provision" list in the `provision` table to backfill against for mandated datasets, which
+    # only ever appear in the mandated detail CSV where they have live data (see below).
     all_odp_org_pipeline = provision[["organisation", "pipeline", "cohort", "start_date"]].merge(
         org_lookup[["organisation", "organisation_name"]].drop_duplicates(),
         on="organisation",
@@ -484,14 +495,41 @@ def main() -> None:
     other_cols = [c for c in odp_qual_summary.columns if c not in front_cols and c != "quality_level_label"]
     odp_qual_summary = odp_qual_summary[front_cols + other_cols + ["quality_level_label"]]
 
-    out_scores = os.path.join(output_dir, "quality_ODP_mandated_dataset_scores_by_LPA.csv")
-    out_detail = os.path.join(output_dir, "quality_ODP_mandated_dataset_quality_detail.csv")
+    # mandated detail CSV: no cohort/provision concept and no expected-provision list to
+    # backfill missing org+pipeline rows against, so this only ever contains rows with live data.
+    mandated_qual_summary = qual_cat_summary_wide[
+        qual_cat_summary_wide["pipeline"].isin(mandated_datasets)
+    ].copy()
+    mandated_non_criteria_cols = [
+        "pipeline", "organisation", "organisation_name",
+        "quality_level_label", "is_authoritative", "authoritative_check_available", "has_zero_entities",
+    ]
+    mandated_criteria_cols = [c for c in mandated_qual_summary.columns if c not in mandated_non_criteria_cols]
+    for col in mandated_criteria_cols:
+        mandated_qual_summary[col] = mandated_qual_summary[col].map(flag_map)
+    for col in bool_cols:
+        mandated_qual_summary[col] = mandated_qual_summary[col].map(bool_map)
 
-    odp_lpa_summary_wide.to_csv(out_scores, index=False)
-    odp_qual_summary.to_csv(out_detail, index=False)
+    mandated_qual_summary = mandated_qual_summary.sort_values(["pipeline", "organisation"]).reset_index(drop=True)
 
-    print(f"Saved {out_scores} ({len(odp_lpa_summary_wide)} rows)")
-    print(f"Saved {out_detail} ({len(odp_qual_summary)} rows)")
+    mandated_front_cols = ["pipeline", "organisation", "organisation_name"]
+    mandated_other_cols = [c for c in mandated_qual_summary.columns if c not in mandated_front_cols and c != "quality_level_label"]
+    mandated_qual_summary = mandated_qual_summary[mandated_front_cols + mandated_other_cols + ["quality_level_label"]]
+
+    out_odp_scores = os.path.join(output_dir, "quality_ODP_dataset_scores_by_LPA.csv")
+    out_mandated_scores = os.path.join(output_dir, "quality_mandated_dataset_scores_by_LPA.csv")
+    out_odp_detail = os.path.join(output_dir, "quality_ODP_dataset_quality_detail.csv")
+    out_mandated_detail = os.path.join(output_dir, "quality_mandated_dataset_quality_detail.csv")
+
+    odp_lpa_summary_wide.to_csv(out_odp_scores, index=False)
+    mandated_lpa_summary_wide.to_csv(out_mandated_scores, index=False)
+    odp_qual_summary.to_csv(out_odp_detail, index=False)
+    mandated_qual_summary.to_csv(out_mandated_detail, index=False)
+
+    print(f"Saved {out_odp_scores} ({len(odp_lpa_summary_wide)} rows)")
+    print(f"Saved {out_mandated_scores} ({len(mandated_lpa_summary_wide)} rows)")
+    print(f"Saved {out_odp_detail} ({len(odp_qual_summary)} rows)")
+    print(f"Saved {out_mandated_detail} ({len(mandated_qual_summary)} rows)")
 
 
 if __name__ == "__main__":
