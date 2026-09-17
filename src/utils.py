@@ -15,8 +15,8 @@ DATASETTE_URL = os.environ.get("DATASETTE_URL", "https://datasette.planning.data
 # succeed a moment later when retried - neither is caught by get_http_session's transport-level
 # retry (which only covers 502/503/504 and connection errors), so callers get a request-level
 # retry here instead.
-EMPTY_RESPONSE_RETRY_ATTEMPTS = 4
-EMPTY_RESPONSE_RETRY_BACKOFF_SECONDS = 2
+EMPTY_RESPONSE_RETRY_ATTEMPTS = 8
+EMPTY_RESPONSE_RETRY_BACKOFF_SECONDS = 10
 
 
 def get_http_session() -> requests.Session:

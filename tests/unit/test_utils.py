@@ -3,6 +3,7 @@ import requests
 
 from utils import (
     DATASETTE_URL,
+    EMPTY_RESPONSE_RETRY_ATTEMPTS,
     datasette_query,
     datasette_query_paginated,
     fetch_datasette_csv_table,
@@ -155,10 +156,11 @@ def test_get_with_retry_raises_runtime_error_after_exhausting_attempts_on_persis
     requests_mock.get("https://example.com/data.csv", text="")
     session = requests.Session()
 
-    with pytest.raises(RuntimeError, match="Empty response from https://example.com/data.csv after 4 attempts"):
+    expected = f"Empty response from https://example.com/data.csv after {EMPTY_RESPONSE_RETRY_ATTEMPTS} attempts"
+    with pytest.raises(RuntimeError, match=expected):
         get_with_retry(session, "https://example.com/data.csv")
 
-    assert requests_mock.call_count == 4
+    assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
 
 
 def test_get_with_retry_raises_http_error_after_exhausting_attempts_on_persistent_400(requests_mock):
@@ -168,7 +170,7 @@ def test_get_with_retry_raises_http_error_after_exhausting_attempts_on_persisten
     with pytest.raises(requests.exceptions.HTTPError):
         get_with_retry(session, "https://example.com/data.csv")
 
-    assert requests_mock.call_count == 4
+    assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
 
 
 def test_get_with_retry_adds_cache_busting_param_on_retry_but_not_first_attempt(requests_mock):
