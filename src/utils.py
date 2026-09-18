@@ -27,9 +27,17 @@ def get_http_session() -> requests.Session:
     return session
 
 
+# datasette answers two very different things with a 400, distinguished only by the response
+# body: a query it killed at sql_time_limit_ms, which is worth asking again, and a query that is
+# simply wrong for that database ("no such column: quality"), which will fail identically however
+# many times we ask. The quality scripts probe every dataset with the same SQL and expect the
+# latter, so retrying those spent the full backoff to arrive at a failure already anticipated.
+SQL_INTERRUPTED_MARKERS = ("sql_time_limit_ms", "SQL Interrupted")
+
+
 def _is_retryable_response(response: requests.Response) -> bool:
     if response.status_code == 400:
-        return True
+        return any(marker in response.text for marker in SQL_INTERRUPTED_MARKERS)
     return response.status_code == 200 and not response.text.strip()
 
 
