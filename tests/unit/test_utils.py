@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import requests
 
@@ -10,6 +12,20 @@ from utils import (
     follow_datasette_next_url,
     get_with_retry,
     read_csv_with_retry,
+)
+
+
+# the two shapes of 400 datasette actually returns, reproduced from live responses
+SQL_INTERRUPTED_BODY = json.dumps(
+    {
+        "ok": False,
+        "error": "<p>SQL query took too long. The time limit is controlled by the sql_time_limit_ms option.</p>",
+        "status": 400,
+        "title": "SQL Interrupted",
+    }
+)
+DETERMINISTIC_SQL_ERROR_BODY = json.dumps(
+    {"ok": False, "error": "no such column: quality", "status": 400, "title": None}
 )
 
 
@@ -139,10 +155,10 @@ def test_get_with_retry_retries_on_empty_200_then_succeeds(requests_mock):
     assert requests_mock.call_count == 3
 
 
-def test_get_with_retry_retries_on_400_then_succeeds(requests_mock):
+def test_get_with_retry_retries_on_interrupted_400_then_succeeds(requests_mock):
     requests_mock.get(
         "https://example.com/data.csv",
-        [{"status_code": 400, "text": ""}, {"status_code": 200, "text": "a,b\n1,2\n"}],
+        [{"status_code": 400, "text": SQL_INTERRUPTED_BODY}, {"status_code": 200, "text": "a,b\n1,2\n"}],
     )
     session = requests.Session()
 
@@ -163,14 +179,27 @@ def test_get_with_retry_raises_runtime_error_after_exhausting_attempts_on_persis
     assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
 
 
-def test_get_with_retry_raises_http_error_after_exhausting_attempts_on_persistent_400(requests_mock):
-    requests_mock.get("https://example.com/data.csv", status_code=400, text="bad request")
+def test_get_with_retry_raises_http_error_after_exhausting_attempts_on_persistent_interrupted_400(requests_mock):
+    requests_mock.get("https://example.com/data.csv", status_code=400, text=SQL_INTERRUPTED_BODY)
     session = requests.Session()
 
     with pytest.raises(requests.exceptions.HTTPError):
         get_with_retry(session, "https://example.com/data.csv")
 
     assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
+
+
+def test_get_with_retry_does_not_retry_a_deterministic_sql_error(requests_mock):
+    """A 400 naming a missing column fails identically however often it is asked. The quality
+    scripts probe every dataset with one SQL and already swallow this, so retrying only spent
+    the full backoff to arrive at a failure the caller had anticipated."""
+    requests_mock.get("https://example.com/data.csv", status_code=400, text=DETERMINISTIC_SQL_ERROR_BODY)
+    session = requests.Session()
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == 1
 
 
 def test_get_with_retry_adds_cache_busting_param_on_retry_but_not_first_attempt(requests_mock):
