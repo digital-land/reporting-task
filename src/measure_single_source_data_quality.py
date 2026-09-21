@@ -182,12 +182,12 @@ def main() -> None:
     # axis (some data -> usable -> trustworthy). 0 is for provisions with no data at all -
     # either no active endpoint, or an active endpoint that produced zero actual entities.
     level_map = {
-        6: "6. authoritative trustworthy data",
-        5: "5. authoritative usable data",
+        6: "6. trustworthy data",
+        5: "5. usable data",
         4: "4. authoritative data",
-        3: "3. non-authoritative trustworthy data",
-        2: "2. non-authoritative usable data",
-        1: "1. non-authoritative/some data",
+        3: "3. verifiable data",
+        2: "2. indicative data",
+        1: "1. some data",
         0: "0. no data",
     }
 
