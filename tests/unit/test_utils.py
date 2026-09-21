@@ -1,11 +1,38 @@
+import json
+
+import pytest
+import requests
+
 from utils import (
     DATASETTE_URL,
+    EMPTY_RESPONSE_RETRY_ATTEMPTS,
     datasette_query,
     datasette_query_paginated,
     fetch_datasette_csv_table,
     follow_datasette_next_url,
+    get_with_retry,
     read_csv_with_retry,
 )
+
+
+# the two shapes of 400 datasette actually returns, reproduced from live responses
+SQL_INTERRUPTED_BODY = json.dumps(
+    {
+        "ok": False,
+        "error": "<p>SQL query took too long. The time limit is controlled by the sql_time_limit_ms option.</p>",
+        "status": 400,
+        "title": "SQL Interrupted",
+    }
+)
+DETERMINISTIC_SQL_ERROR_BODY = json.dumps(
+    {"ok": False, "error": "no such column: quality", "status": 400, "title": None}
+)
+
+
+@pytest.fixture(autouse=True)
+def no_sleep(monkeypatch):
+    """Every retry test below exercises real retry attempts - skip the actual backoff delay."""
+    monkeypatch.setattr("utils.time.sleep", lambda seconds: None)
 
 
 def test_read_csv_with_retry_parses_csv(requests_mock):
@@ -113,3 +140,100 @@ def test_fetch_datasette_csv_table_respects_db_argument(requests_mock):
     df = fetch_datasette_csv_table("reporting_historic_endpoints", db="performance")
 
     assert df.to_dict("records") == [{"endpoint": "abc"}]
+
+
+def test_get_with_retry_retries_on_empty_200_then_succeeds(requests_mock):
+    requests_mock.get(
+        "https://example.com/data.csv",
+        [{"text": ""}, {"text": ""}, {"text": "a,b\n1,2\n"}],
+    )
+    session = requests.Session()
+
+    response = get_with_retry(session, "https://example.com/data.csv")
+
+    assert response.text == "a,b\n1,2\n"
+    assert requests_mock.call_count == 3
+
+
+def test_get_with_retry_retries_on_interrupted_400_then_succeeds(requests_mock):
+    requests_mock.get(
+        "https://example.com/data.csv",
+        [{"status_code": 400, "text": SQL_INTERRUPTED_BODY}, {"status_code": 200, "text": "a,b\n1,2\n"}],
+    )
+    session = requests.Session()
+
+    response = get_with_retry(session, "https://example.com/data.csv")
+
+    assert response.status_code == 200
+    assert requests_mock.call_count == 2
+
+
+def test_get_with_retry_raises_runtime_error_after_exhausting_attempts_on_persistent_empty_body(requests_mock):
+    requests_mock.get("https://example.com/data.csv", text="")
+    session = requests.Session()
+
+    expected = f"Empty response from https://example.com/data.csv after {EMPTY_RESPONSE_RETRY_ATTEMPTS} attempts"
+    with pytest.raises(RuntimeError, match=expected):
+        get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
+
+
+def test_get_with_retry_raises_http_error_after_exhausting_attempts_on_persistent_interrupted_400(requests_mock):
+    requests_mock.get("https://example.com/data.csv", status_code=400, text=SQL_INTERRUPTED_BODY)
+    session = requests.Session()
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
+
+
+def test_get_with_retry_does_not_retry_a_deterministic_sql_error(requests_mock):
+    """A 400 naming a missing column fails identically however often it is asked. The quality
+    scripts probe every dataset with one SQL and already swallow this, so retrying only spent
+    the full backoff to arrive at a failure the caller had anticipated."""
+    requests_mock.get("https://example.com/data.csv", status_code=400, text=DETERMINISTIC_SQL_ERROR_BODY)
+    session = requests.Session()
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == 1
+
+
+def test_get_with_retry_adds_cache_busting_param_on_retry_but_not_first_attempt(requests_mock):
+    """Regression test: a CDN caching a broken response for a given query string will keep
+    serving that same stale entry on identical retries, so retries must vary the request."""
+    requests_mock.get(
+        "https://example.com/data.csv",
+        [{"text": ""}, {"text": "a,b\n1,2\n"}],
+    )
+    session = requests.Session()
+
+    get_with_retry(session, "https://example.com/data.csv")
+
+    assert "_cb" not in requests_mock.request_history[0].qs
+    assert "_cb" in requests_mock.request_history[1].qs
+
+
+def test_get_with_retry_does_not_retry_on_immediate_success(requests_mock):
+    requests_mock.get("https://example.com/data.csv", text="a,b\n1,2\n")
+    session = requests.Session()
+
+    get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == 1
+
+
+def test_read_csv_with_retry_recovers_from_one_empty_response(requests_mock):
+    """Regression test for the EmptyDataError seen in production: an empty response followed
+    by a real one should now succeed instead of pandas.errors.EmptyDataError bubbling up."""
+    requests_mock.get(
+        "https://example.com/data.csv",
+        [{"text": ""}, {"text": "a,b\n1,2\n"}],
+    )
+
+    df = read_csv_with_retry("https://example.com/data.csv")
+
+    assert df.to_dict("records") == [{"a": 1, "b": 2}]
