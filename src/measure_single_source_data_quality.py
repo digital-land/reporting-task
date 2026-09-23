@@ -5,10 +5,7 @@ active-endpoint query to determine which provisions are currently live. Single-s
 are everything that isn't ODP-scoped or "mandated" (see measure_odp_mandated_data_quality.py,
 which covers those with slightly different checks). It maps issue-type tasks to quality
 criteria, calculates provider-dataset quality levels on a 0-6 scale (authoritative axis x rung
-axis) plus criteria pass/fail detail, applies a staleness cap (a criterion specific to
-single-source datasets, which have no alternative source to cross-check freshness against, and
-which task.csv carries no date field for - resource age is queried separately for this one
-purpose), and writes the detail CSV output.
+axis) plus criteria pass/fail detail, and writes the detail CSV output.
 """
 
 from __future__ import annotations
@@ -21,7 +18,6 @@ import numpy as np
 from utils import datasette_query, datasette_query_paginated, read_csv_with_retry
 
 TASK_CSV_URL = "https://files.planning.data.gov.uk/dataset/task.csv"
-STALENESS_AGE_DAYS = 365
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,10 +58,9 @@ def main() -> None:
 
     # active-endpoint population: task.csv only ever lists problems, so it can't tell us which
     # provisions currently have live data at all - a provision with a perfectly clean endpoint
-    # and no tasks would otherwise be invisible. This query establishes that base population
-    # (and, uniquely for this report, resource age for the staleness cap below); it is not
-    # itself a quality signal. Restricted to single-source pipelines at the query itself, so
-    # ODP/mandated data never enters this report.
+    # and no tasks would otherwise be invisible. This query establishes that base population;
+    # it is not itself a quality signal. Restricted to single-source pipelines at the query
+    # itself, so ODP/mandated data never enters this report.
     quoted_pipelines = ", ".join(f"'{p}'" for p in single_source_pipelines)
     active_endpoints = datasette_query_paginated(
         "performance",
@@ -75,8 +70,7 @@ def main() -> None:
                rhe.collection,
                rhe.pipeline,
                rhe.endpoint,
-               rhe.resource,
-               CAST(JULIANDAY('now') - JULIANDAY(rhe.resource_start_date) AS int) AS resource_age_days
+               rhe.resource
         FROM reporting_historic_endpoints rhe
         WHERE rhe.endpoint_end_date = ''
           AND rhe.resource_end_date = ''
@@ -153,7 +147,7 @@ def main() -> None:
     )
 
     # ISSUES TABLE - flagging when provisions have data quality issues (authoritative status
-    # and staleness are separate axes, handled below, not concatenated in here)
+    # is a separate axis, handled below, not concatenated in here)
     qual_all = endpoints_with_issues.merge(issue_lookup, how="left", on="issue_type")[[
         "collection", "pipeline", "organisation", "organisation_name", "issue_type", "quality_criteria", "quality_level",
     ]]
@@ -202,28 +196,6 @@ def main() -> None:
     qual_summary["quality_level_label"] = qual_summary["quality_level"].map(level_map)
     qual_summary = qual_summary.drop(columns=["severity_level", "quality_rung"])
 
-    # staleness acts as another criterion gating the top rung: a stale provision can't be
-    # "trustworthy" and gets capped down to "usable" instead, but a provision already at
-    # "usable" or "some data" isn't pushed down any further. Provisions already at 0 ("no
-    # data") are left alone - there's nothing left to downgrade.
-    stale = active_endpoints[active_endpoints["resource_age_days"] > STALENESS_AGE_DAYS][["pipeline", "organisation"]].drop_duplicates()
-    stale["is_stale"] = True
-
-    qual_summary = qual_summary.merge(stale, how="left", on=["pipeline", "organisation"])
-    qual_summary["is_stale"] = qual_summary["is_stale"].eq(True)
-
-    cap_mask = qual_summary["is_stale"] & (qual_summary["quality_level"] > 0)
-    rung = np.where(qual_summary["is_authoritative"], qual_summary["quality_level"] - 3, qual_summary["quality_level"])
-    capped_rung = np.minimum(rung, 2)
-    capped_quality_level = np.where(qual_summary["is_authoritative"], capped_rung + 3, capped_rung)
-    qual_summary.loc[cap_mask, "quality_level"] = capped_quality_level[cap_mask]
-    qual_summary.loc[cap_mask, "quality_level_label"] = qual_summary.loc[cap_mask, "quality_level"].map(level_map)
-
-    # bring in resource age for the detail output (not just the pass/fail is_stale flag) -
-    # max across resources if an org has more than one for a pipeline
-    age = active_endpoints.groupby(["pipeline", "organisation"], as_index=False).agg(resource_age_days=("resource_age_days", "max"))
-    qual_summary = qual_summary.merge(age, how="left", on=["pipeline", "organisation"])
-
     qual_cat_count = qual_all.groupby(
         ["pipeline", "organisation", "organisation_name", "quality_criteria"],
         as_index=False,
@@ -252,13 +224,10 @@ def main() -> None:
         on=["pipeline", "organisation"],
     )
 
-    # bring in the authoritative-source and staleness checks (separate axes, not part of
-    # the severity quality_criteria pivot above)
+    # bring in the authoritative-source status (a separate axis, not part of the severity
+    # quality_criteria pivot above)
     qual_cat_summary_wide = qual_cat_summary_wide.merge(
-        qual_summary[[
-            "organisation", "pipeline", "is_authoritative", "authoritative_check_available",
-            "resource_age_days", "is_stale",
-        ]].drop_duplicates(),
+        qual_summary[["organisation", "pipeline", "is_authoritative", "authoritative_check_available"]].drop_duplicates(),
         how="left",
         on=["organisation", "pipeline"],
     )
@@ -268,8 +237,8 @@ def main() -> None:
     # to TRUE/FALSE strings so TRUE means "yes, this issue occurred", matching
     # measure_odp_mandated_data_quality.py
     non_criteria_cols = [
-        "pipeline", "organisation", "organisation_name", "resource_age_days", "quality_level_label",
-        "is_authoritative", "authoritative_check_available", "is_stale",
+        "pipeline", "organisation", "organisation_name", "quality_level_label",
+        "is_authoritative", "authoritative_check_available",
     ]
     qual_criteria_cols = [c for c in qual_cat_summary_wide.columns if c not in non_criteria_cols]
     flag_map = {True: "FALSE", False: "TRUE", 1: "FALSE", 0: "TRUE", 1.0: "FALSE", 0.0: "TRUE"}
@@ -279,7 +248,7 @@ def main() -> None:
     # these are already true/false in their natural sense (unlike the issue_flag-derived
     # criteria columns above, which invert), so map straight through to TRUE/FALSE strings
     # for consistent CSV formatting rather than leaving them as Python True/False/blank.
-    bool_cols = ["is_authoritative", "authoritative_check_available", "is_stale"]
+    bool_cols = ["is_authoritative", "authoritative_check_available"]
     bool_map = {True: "TRUE", False: "FALSE", 1: "TRUE", 0: "FALSE", 1.0: "TRUE", 0.0: "FALSE"}
     for col in bool_cols:
         qual_cat_summary_wide[col] = qual_cat_summary_wide[col].map(bool_map)
