@@ -1,14 +1,16 @@
 """
 Builds four quality CSV reports - an ODP pair and a "mandated" dataset pair - by combining
-active endpoint issue data, provision/organisation lookups, and each dataset's own
-entity-level `quality` signal (rather than a geospatial join) to determine authoritative sourcing.
-It maps issues to quality criteria, calculates provider-dataset quality levels on a 0-6 scale
-(authoritative axis x rung axis) plus criteria pass/fail detail, writes the four CSV outputs.
+task.csv (the platform's own list of per-organisation/per-dataset quality tasks) with
+provision/organisation lookups and a lightweight active-endpoint query to determine which
+provisions are currently live. It maps issue-type tasks to quality criteria, calculates
+provider-dataset quality levels on a 0-6 scale (authoritative axis x rung axis) plus criteria
+pass/fail detail, and writes the four CSV outputs.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 
 import geopandas as gpd
@@ -16,6 +18,8 @@ import numpy as np
 import pandas as pd
 import shapely.wkt
 from utils import read_csv_with_retry, datasette_query, datasette_query_paginated
+
+TASK_CSV_URL = "https://files.planning.data.gov.uk/dataset/task.csv"
 
 ODP_DATASETS = [
     "conservation-area",
@@ -33,55 +37,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
     return parser.parse_args()
-
-
-def get_entity_quality(pipeline: str) -> pd.DataFrame:
-    # per-entity authoritative-source signal, computed by the platform itself against each
-    # dataset's own database. Not every dataset has an entity/quality/organisation_entity
-    # column (e.g. pure reference/enum datasets), so failures are swallowed and return empty.
-    sql = """
-        SELECT organisation_entity, quality, COUNT(*) as n
-        FROM entity
-        WHERE organisation_entity IS NOT NULL AND organisation_entity != ''
-        GROUP BY organisation_entity, quality
-    """
-    try:
-        df = datasette_query(pipeline, sql)
-    except Exception:
-        return pd.DataFrame(columns=["organisation_entity", "quality", "n", "pipeline"])
-
-    df["pipeline"] = pipeline
-    return df
-
-
-def make_authoritative_lookup(entity_quality_raw: pd.DataFrame, quality_priority: dict, org_lookup: pd.DataFrame) -> pd.DataFrame:
-    # flags whether a provision's data is confirmed to come from the authoritative source,
-    # using the platform's own per-entity `quality` field rather than a geospatial approximation
-    # - an organisation can be the "expected" provider for a dataset yet still have its area
-    # covered by an alternative source's entities. Aggregated leniently: if ANY entity attributed
-    # to an organisation is quality-tier "authoritative" or better, the whole organisation+pipeline
-    # provision counts as authoritative.
-
-    df = entity_quality_raw.copy()
-    df["priority"] = df["quality"].map(quality_priority)
-    df = df.dropna(subset=["priority", "organisation_entity"])
-
-    authoritative_priority = quality_priority["authoritative"]
-    df["is_authoritative_entity"] = df["priority"] >= authoritative_priority
-
-    summary = df.groupby(["pipeline", "organisation_entity"], as_index=False).agg(
-        is_authoritative=("is_authoritative_entity", "max")
-    )
-    summary["organisation_entity"] = summary["organisation_entity"].astype(int)
-
-    summary = summary.merge(
-        org_lookup[["organisation_entity", "organisation", "organisation_name"]],
-        how="left",
-        on="organisation_entity",
-    )
-    summary["authoritative_check_available"] = True
-
-    return summary[["pipeline", "organisation", "organisation_name", "is_authoritative", "authoritative_check_available"]]
 
 
 def get_pdp_gdf(dataset: str, geometry_field: str, usecols: list = None) -> gpd.GeoDataFrame:
@@ -133,10 +88,12 @@ def main() -> None:
         "dataset",
     ]))
 
-    quality_lookup = datasette_query("digital-land", "SELECT quality, priority FROM quality")
-    quality_priority = dict(zip(quality_lookup["quality"], quality_lookup["priority"]))
-
-    endpoint_issues = datasette_query_paginated(
+    # active-endpoint population: task.csv only ever lists problems, so it can't tell us which
+    # provisions currently have live data at all - a provision with a perfectly clean endpoint
+    # and no tasks would otherwise be invisible. This query establishes that base population;
+    # it is not itself a quality signal, just scope (mirrors the old endpoint_issues query minus
+    # the issue join, which now comes from task.csv instead).
+    active_endpoints = datasette_query_paginated(
         "performance",
         """
         SELECT rhe.organisation,
@@ -144,10 +101,8 @@ def main() -> None:
                rhe.collection,
                rhe.pipeline,
                rhe.endpoint,
-               rhe.resource,
-               its.issue_type
+               rhe.resource
         FROM reporting_historic_endpoints rhe
-        LEFT JOIN endpoint_dataset_issue_type_summary its ON rhe.resource = its.resource
         WHERE rhe.endpoint_end_date = ''
           AND rhe.resource_end_date = ''
           AND rhe.latest_status = 200
@@ -179,7 +134,7 @@ def main() -> None:
     # linger in the source data after an organisation's own end_date is set, and closed/merged
     # organisations shouldn't appear in the quality report
     active_organisations = set(org_lookup.loc[org_lookup["end_date"].isnull(), "organisation"])
-    endpoint_issues = endpoint_issues[endpoint_issues["organisation"].isin(active_organisations)]
+    active_endpoints = active_endpoints[active_endpoints["organisation"].isin(active_organisations)]
     provision = provision[provision["organisation"].isin(active_organisations)]
 
     lpa_gdf = get_pdp_gdf("local-planning-authority", "geometry", usecols=["reference", "name", "geometry"]).rename(
@@ -192,56 +147,62 @@ def main() -> None:
         on="LPACD",
     )
 
-    base = lpa_live[["LPACD", "organisation"]].merge(endpoint_issues, how="outer", on="organisation")
+    base = lpa_live[["LPACD", "organisation"]].merge(active_endpoints, how="outer", on="organisation")
 
-    # Authoritative-source signal: query each active pipeline's own entity table for its
-    # platform-computed `quality` field, keyed by organisation_entity. This is a much better
-    # signal than a geospatial join - it reflects the real source of the data actually held,
-    # not just who is registered as the expected provider. Pipelines without a usable
-    # entity/quality/organisation_entity column just come back empty from get_entity_quality.
-    entity_quality_frames = []
-    for pipeline in endpoint_issues["pipeline"].dropna().unique():
-        pipeline_entity_quality = get_entity_quality(pipeline)
-        if not pipeline_entity_quality.empty:
-            entity_quality_frames.append(pipeline_entity_quality)
-    entity_quality_raw = (
-        pd.concat(entity_quality_frames, ignore_index=True)
-        if entity_quality_frames
-        else pd.DataFrame(columns=["organisation_entity", "quality", "n", "pipeline"])
-    )
+    # task.csv is the source of truth for quality signals: one row per flagged condition,
+    # keyed by dataset/organisation(/endpoint/resource), with a `details` JSON blob whose shape
+    # depends on task_source (issue / provision / expectation / log - see quality_dimension
+    # values for the full breakdown). "issue", "provision" (authoritativeness) and the
+    # expectation "count_lpa_boundary" operation (entities outside the LPA boundary) are used.
+    # No task.csv equivalent was found for the old manual-count-match expectation check, which
+    # is dropped rather than guessed at.
+    task_df = read_csv_with_retry(TASK_CSV_URL, dtype="str").rename(columns={"dataset": "pipeline"})
+    task_df = task_df[task_df["organisation"].isin(active_organisations)]
 
-    auth_lookup = make_authoritative_lookup(entity_quality_raw, quality_priority, org_lookup)
+    # Authoritative-source signal: a "provision" task is only raised when an organisation's data
+    # for a dataset is confirmed NOT authoritative (details.quality is "some" or "none") - so
+    # presence of a task means not authoritative, and absence means authoritative (task.csv has
+    # no separate "checked and passed" state, unlike the old per-pipeline entity-table query).
+    auth_lookup = task_df[task_df["task_source"] == "provision"][["pipeline", "organisation"]].drop_duplicates()
+    auth_lookup["is_authoritative"] = False
 
-    qual_match_orgs = datasette_query(
+    # Absence of a provision task doesn't always mean authoritative, though - confirmed with the
+    # data team: it can also mean the organisation isn't the designated provider for that dataset
+    # at all (e.g. MHCLG/Historic England supplying a fallback "alternative" source for what's
+    # normally an LPA's own dataset - task.csv would never raise a task against them, since
+    # asking them to be more authoritative wouldn't fix anything). The general (non-ODP-scoped)
+    # provision table flags exactly these cases via provision_reason='alternative', so they're
+    # excluded from the "no task -> authoritative" inference rather than defaulting to True.
+    alternative_providers = datasette_query(
         "digital-land",
-        """
-        SELECT DISTINCT organisation
-        FROM expectation
-        WHERE name = 'Check number of conservation-area entities inside the local planning authority boundary matches the manual count'
-          AND passed = 'False'
-        """,
-    )
-    qual_match = lpa_live.merge(qual_match_orgs, how="inner", on="organisation")[["LPACD", "organisation", "organisation_name"]]
-    qual_match["collection"] = "conservation-area"
-    qual_match["pipeline"] = "conservation-area"
-    qual_match["quality_criteria"] = "3 - entity count matches LPA"
-    qual_match["quality_level"] = 3
+        "SELECT dataset AS pipeline, organisation FROM provision WHERE project = '' AND provision_reason = 'alternative'",
+    ).drop_duplicates()
+    alternative_providers["authoritative_check_available"] = False
 
-    bounds_orgs = datasette_query(
-        "digital-land",
-        """
-        SELECT DISTINCT organisation, dataset AS pipeline
-        FROM expectation
-        WHERE name LIKE '%outside%'
-          AND message NOT LIKE '%error%'
-          AND passed = 'False'
-        """,
-    )
-    qual_bounds = lpa_live.merge(bounds_orgs, how="inner", on="organisation")[["LPACD", "organisation", "organisation_name", "pipeline"]]
+    # Boundary-check signal: replaces the old expectation-table query for geometries recorded
+    # outside the LPA boundary. For conservation-area specifically, this operation is known to
+    # actually be a different check (a manual-count comparison, not a boundary-violation count -
+    # its "count" can exceed an org's total entity count, e.g. local-authority:EHA: 94 vs 58
+    # total conservation-area entities) - tracked as a data-quality bug in a separate GitHub
+    # issue against task.csv itself. Per product decision, it's used as-is here regardless.
+    bounds_tasks = task_df[task_df["task_source"] == "expectation"].copy()
+    bounds_tasks["operation"] = bounds_tasks["details"].apply(lambda d: json.loads(d).get("operation"))
+    bounds_tasks = bounds_tasks[bounds_tasks["operation"] == "count_lpa_boundary"][["pipeline", "organisation"]].drop_duplicates()
+
+    qual_bounds = lpa_live.merge(bounds_tasks, how="inner", on="organisation")[["LPACD", "organisation", "organisation_name", "pipeline"]]
     qual_bounds["quality_criteria"] = "3 - entities within LPA boundary"
     qual_bounds["quality_level"] = 3
 
-    qual_issues = base.merge(issue_lookup, how="left", on="issue_type")[[
+    # Issue-type tasks - one row per (organisation, pipeline, endpoint, resource, issue_type).
+    # Left-merged onto `base` so a resource with no issue tasks still gets a row (issue_type
+    # NaN), same as the old SQL LEFT JOIN onto endpoint_dataset_issue_type_summary.
+    issue_tasks = task_df[task_df["task_source"] == "issue"].copy()
+    issue_tasks["issue_type"] = issue_tasks["details"].apply(lambda d: json.loads(d).get("issue_type"))
+    issue_tasks = issue_tasks[["organisation", "pipeline", "endpoint", "resource", "issue_type"]]
+
+    base_with_issues = base.merge(issue_tasks, how="left", on=["organisation", "pipeline", "endpoint", "resource"])
+
+    qual_issues = base_with_issues.merge(issue_lookup, how="left", on="issue_type")[[
         "LPACD",
         "collection",
         "pipeline",
@@ -254,7 +215,7 @@ def main() -> None:
 
     # severity-only (authoritative status is a separate axis, handled via auth_lookup below,
     # not concatenated in here - this replaces the old geospatial-join-based qual_prov table)
-    qual_all = pd.concat([qual_match, qual_bounds, qual_issues], ignore_index=True)
+    qual_all = pd.concat([qual_bounds, qual_issues], ignore_index=True)
 
     # 0-6 scale: authoritative axis (confirmed authoritative-sourced data?) crossed with rung
     # axis (some data -> usable -> trustworthy). 0 is for provisions with no data at all -
@@ -276,43 +237,29 @@ def main() -> None:
     qual_summary["severity_level"] = qual_summary["severity_level"].replace(np.nan, 4)
     qual_summary["quality_rung"] = qual_summary["severity_level"] - 1
 
-    # bring in authoritative status. missing a match means "not checked", treated the same as
-    # non-authoritative (not proven authoritative -> not elevated), but flagged separately so
-    # it's distinguishable from a provision that was actually checked and found non-authoritative.
+    # bring in authoritative status - missing a match now means "confirmed authoritative"
+    # (see auth_lookup above), unlike the old entity-table lookup where a missing match meant
+    # "not checked, treated as non-authoritative".
     qual_summary = qual_summary.merge(
-        auth_lookup[["organisation", "pipeline", "is_authoritative", "authoritative_check_available"]],
+        auth_lookup[["organisation", "pipeline", "is_authoritative"]],
         how="left",
         on=["organisation", "pipeline"],
     )
-    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].eq(True)
-    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].eq(True)
+    qual_summary["is_authoritative"] = qual_summary["is_authoritative"].fillna(True)
+
+    qual_summary = qual_summary.merge(
+        alternative_providers[["organisation", "pipeline", "authoritative_check_available"]],
+        how="left",
+        on=["organisation", "pipeline"],
+    )
+    qual_summary["authoritative_check_available"] = qual_summary["authoritative_check_available"].fillna(True)
+    qual_summary.loc[~qual_summary["authoritative_check_available"], "is_authoritative"] = False
 
     qual_summary["quality_level"] = np.where(
         qual_summary["is_authoritative"], qual_summary["quality_rung"] + 3, qual_summary["quality_rung"]
     ).astype(int)
     qual_summary["quality_level_label"] = qual_summary["quality_level"].map(level_map)
     qual_summary = qual_summary.drop(columns=["severity_level", "quality_rung"])
-
-    # an active endpoint that produced zero entities has nothing meaningful for the severity/
-    # authoritative axes to score - force it to "no data" rather than whatever rung/authoritative
-    # combination the (empty) issue/entity metadata would otherwise imply. Only overrides
-    # pipelines whose entity table was actually queried successfully (present in
-    # entity_quality_raw) - if the fetch failed for a pipeline entirely, we don't know its
-    # entity counts, so those scores are left as computed.
-    queryable_pipelines = entity_quality_raw["pipeline"].unique()
-    has_entities = entity_quality_raw[["pipeline", "organisation_entity"]].drop_duplicates().copy()
-    has_entities["organisation_entity"] = has_entities["organisation_entity"].astype(int)
-    has_entities = has_entities.merge(
-        org_lookup[["organisation_entity", "organisation"]], how="left", on="organisation_entity"
-    )[["pipeline", "organisation"]].drop_duplicates()
-    has_entities["has_entities"] = True
-
-    qual_summary = qual_summary.merge(has_entities, how="left", on=["pipeline", "organisation"])
-    qual_summary["has_zero_entities"] = qual_summary["pipeline"].isin(queryable_pipelines) & qual_summary["has_entities"].isna()
-    zero_entity_mask = qual_summary["has_zero_entities"]
-    qual_summary.loc[zero_entity_mask, "quality_level"] = 0
-    qual_summary.loc[zero_entity_mask, "quality_level_label"] = level_map[0]
-    qual_summary = qual_summary.drop(columns=["has_entities"])
 
     # subset to ODP datasets and pivot for the ODP scores-by-LPA CSV. cohort/start_date are an
     # organisation-level attribute of ODP provision (constant across an org's ODP pipelines),
@@ -409,10 +356,10 @@ def main() -> None:
         on=["pipeline", "organisation"],
     )
 
-    # bring in the authoritative-source and zero-entity checks (separate axes, not part of
-    # the severity quality_criteria pivot above)
+    # bring in the authoritative-source status (a separate axis, not part of the severity
+    # quality_criteria pivot above)
     qual_cat_summary_wide = qual_cat_summary_wide.merge(
-        qual_summary[["organisation", "pipeline", "is_authoritative", "authoritative_check_available", "has_zero_entities"]].drop_duplicates(),
+        qual_summary[["organisation", "pipeline", "is_authoritative", "authoritative_check_available"]].drop_duplicates(),
         how="left",
         on=["organisation", "pipeline"],
     )
@@ -429,7 +376,7 @@ def main() -> None:
 
     non_criteria_cols = [
         "pipeline", "organisation", "organisation_name", "cohort", "start_date",
-        "quality_level_label", "is_authoritative", "authoritative_check_available", "has_zero_entities",
+        "quality_level_label", "is_authoritative", "authoritative_check_available",
     ]
     qual_criteria_cols = [c for c in odp_qual_summary.columns if c not in non_criteria_cols]
     flag_map = {True: "FALSE", False: "TRUE", 1: "FALSE", 0: "TRUE", 1.0: "FALSE", 0.0: "TRUE"}
@@ -439,7 +386,7 @@ def main() -> None:
     # these are already true/false in their natural sense (unlike the issue_flag-derived
     # criteria columns above, which invert), so map straight through to TRUE/FALSE strings
     # for consistent CSV formatting rather than leaving them as 1.0/0.0/blank.
-    bool_cols = ["is_authoritative", "authoritative_check_available", "has_zero_entities"]
+    bool_cols = ["is_authoritative", "authoritative_check_available"]
     bool_map = {True: "TRUE", False: "FALSE", 1: "TRUE", 0: "FALSE", 1.0: "TRUE", 0.0: "FALSE"}
     for col in bool_cols:
         odp_qual_summary[col] = odp_qual_summary[col].map(bool_map)
@@ -484,7 +431,6 @@ def main() -> None:
             missing_detail_rows[col] = np.nan
         missing_detail_rows["is_authoritative"] = np.nan
         missing_detail_rows["authoritative_check_available"] = np.nan
-        missing_detail_rows["has_zero_entities"] = np.nan
         missing_detail_rows["quality_level_label"] = "0. no data"
         odp_qual_summary = pd.concat([odp_qual_summary, missing_detail_rows], ignore_index=True)
 
@@ -501,8 +447,8 @@ def main() -> None:
         qual_cat_summary_wide["pipeline"].isin(mandated_datasets)
     ].copy()
     mandated_non_criteria_cols = [
-        "pipeline", "organisation", "organisation_name",
-        "quality_level_label", "is_authoritative", "authoritative_check_available", "has_zero_entities",
+        "pipeline", "organisation", "organisation_name", "quality_level_label",
+        "is_authoritative", "authoritative_check_available",
     ]
     mandated_criteria_cols = [c for c in mandated_qual_summary.columns if c not in mandated_non_criteria_cols]
     for col in mandated_criteria_cols:
