@@ -15,6 +15,7 @@ import json
 import os
 
 import numpy as np
+import pandas as pd
 from utils import datasette_query, datasette_query_paginated, read_csv_with_retry
 
 TASK_CSV_URL = "https://files.planning.data.gov.uk/dataset/task.csv"
@@ -115,6 +116,31 @@ def main() -> None:
         task_df["organisation"].isin(active_organisations) & task_df["pipeline"].isin(single_source_pipelines)
     ]
 
+    # Endpoint-error tasks - a "log" task records a currently-failing endpoint (a non-200
+    # status, or a connection exception) rather than a successful fetch, so it has no
+    # associated resource. Previously, a non-200 endpoint was simply excluded from
+    # active_endpoints entirely and the organisation vanished from the report rather than the
+    # failure being surfaced. Union these in (with resource left blank) so the organisation
+    # still gets a row for the pipeline. `collection` is filled from another live endpoint on
+    # the same pipeline (it's a dataset-level attribute, not per-organisation) so these rows
+    # don't form a spurious separate group in the groupby below.
+    pipeline_collection = active_endpoints[["pipeline", "collection"]].drop_duplicates().groupby("pipeline")["collection"].first()
+
+    endpoint_errors = task_df[task_df["task_source"] == "log"][["organisation", "pipeline", "endpoint"]].drop_duplicates()
+    endpoint_errors = endpoint_errors.merge(
+        org_lookup[["organisation", "organisation_name"]].drop_duplicates(), how="left", on="organisation"
+    )
+    endpoint_errors["collection"] = endpoint_errors["pipeline"].map(pipeline_collection)
+    endpoint_errors["resource"] = np.nan
+
+    endpoint_error_flag = endpoint_errors[["organisation", "pipeline"]].drop_duplicates()
+    endpoint_error_flag["has_endpoint_error"] = True
+
+    active_endpoints = pd.concat(
+        [active_endpoints, endpoint_errors[["organisation", "organisation_name", "collection", "pipeline", "endpoint", "resource"]]],
+        ignore_index=True,
+    )
+
     # Authoritative-source signal: a "provision" task is only raised when an organisation's data
     # for a dataset is confirmed NOT authoritative (details.quality is "some" or "none") - so
     # presence of a task means not authoritative, and absence means authoritative (task.csv has
@@ -196,6 +222,14 @@ def main() -> None:
     qual_summary["quality_level_label"] = qual_summary["quality_level"].map(level_map)
     qual_summary = qual_summary.drop(columns=["severity_level", "quality_rung"])
 
+    # has_endpoint_error is informational only - it doesn't change the score. Data already
+    # ingested from a prior successful fetch is still real, authoritative-or-not data sitting
+    # on the platform; a currently-failing endpoint is a freshness/staleness concern, not a
+    # correctness one, and this report doesn't assess staleness (the staleness cap that used to
+    # exist here was deliberately removed - see git history).
+    qual_summary = qual_summary.merge(endpoint_error_flag, how="left", on=["organisation", "pipeline"])
+    qual_summary["has_endpoint_error"] = qual_summary["has_endpoint_error"].fillna(False)
+
     qual_cat_count = qual_all.groupby(
         ["pipeline", "organisation", "organisation_name", "quality_criteria"],
         as_index=False,
@@ -224,10 +258,12 @@ def main() -> None:
         on=["pipeline", "organisation"],
     )
 
-    # bring in the authoritative-source status (a separate axis, not part of the severity
-    # quality_criteria pivot above)
+    # bring in the authoritative-source and endpoint-error status (separate axes, not part of
+    # the severity quality_criteria pivot above)
     qual_cat_summary_wide = qual_cat_summary_wide.merge(
-        qual_summary[["organisation", "pipeline", "is_authoritative", "authoritative_check_available"]].drop_duplicates(),
+        qual_summary[[
+            "organisation", "pipeline", "is_authoritative", "authoritative_check_available", "has_endpoint_error",
+        ]].drop_duplicates(),
         how="left",
         on=["organisation", "pipeline"],
     )
@@ -238,7 +274,7 @@ def main() -> None:
     # measure_odp_mandated_data_quality.py
     non_criteria_cols = [
         "pipeline", "organisation", "organisation_name", "quality_level_label",
-        "is_authoritative", "authoritative_check_available",
+        "is_authoritative", "authoritative_check_available", "has_endpoint_error",
     ]
     qual_criteria_cols = [c for c in qual_cat_summary_wide.columns if c not in non_criteria_cols]
     flag_map = {True: "FALSE", False: "TRUE", 1: "FALSE", 0: "TRUE", 1.0: "FALSE", 0.0: "TRUE"}
@@ -248,7 +284,7 @@ def main() -> None:
     # these are already true/false in their natural sense (unlike the issue_flag-derived
     # criteria columns above, which invert), so map straight through to TRUE/FALSE strings
     # for consistent CSV formatting rather than leaving them as Python True/False/blank.
-    bool_cols = ["is_authoritative", "authoritative_check_available"]
+    bool_cols = ["is_authoritative", "authoritative_check_available", "has_endpoint_error"]
     bool_map = {True: "TRUE", False: "FALSE", 1: "TRUE", 0: "FALSE", 1.0: "TRUE", 0.0: "FALSE"}
     for col in bool_cols:
         qual_cat_summary_wide[col] = qual_cat_summary_wide[col].map(bool_map)
