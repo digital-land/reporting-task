@@ -89,7 +89,7 @@ def main(output_dir: str):
         )
     except Exception as e:
         logger.error(f"Failed to load organisation data: {e}")
-        df_final = df_merged
+        raise
 
     # ---------------------------------------------------------------
     # Filter to only rows with end dates, sort and save

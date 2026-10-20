@@ -237,3 +237,32 @@ def test_read_csv_with_retry_recovers_from_one_empty_response(requests_mock):
     df = read_csv_with_retry("https://example.com/data.csv")
 
     assert df.to_dict("records") == [{"a": 1, "b": 2}]
+
+
+@pytest.mark.parametrize(
+    "transport_error",
+    [requests.exceptions.RetryError, requests.exceptions.ConnectionError],
+)
+def test_get_with_retry_retries_after_transport_retries_are_exhausted_then_succeeds(requests_mock, transport_error):
+    """A saturated datasette answers 504 for longer than get_http_session's transport-level retry
+    waits, which then raises rather than returning a response."""
+    requests_mock.get(
+        "https://example.com/data.csv",
+        [{"exc": transport_error}, {"exc": transport_error}, {"text": "a,b\n1,2\n"}],
+    )
+    session = requests.Session()
+
+    response = get_with_retry(session, "https://example.com/data.csv")
+
+    assert response.text == "a,b\n1,2\n"
+    assert requests_mock.call_count == 3
+
+
+def test_get_with_retry_raises_transport_error_after_exhausting_attempts(requests_mock):
+    requests_mock.get("https://example.com/data.csv", exc=requests.exceptions.RetryError)
+    session = requests.Session()
+
+    with pytest.raises(requests.exceptions.RetryError):
+        get_with_retry(session, "https://example.com/data.csv")
+
+    assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS

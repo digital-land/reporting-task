@@ -44,9 +44,11 @@ def _is_retryable_response(response: requests.Response) -> bool:
 def get_with_retry(session: requests.Session, url: str, params: dict = None) -> requests.Response:
     """
     GET a URL, retrying (with backoff) on a 400 or an empty-bodied 200 - both observed from
-    datasette as transient, alongside the 502/503/504s get_http_session already retries at the
-    transport level. Raises the real HTTPError, or a RuntimeError naming the URL for a
-    persistently empty body, once attempts are exhausted.
+    datasette as transient - and on 502/503/504s or connection errors that outlast
+    get_http_session's transport-level retry, which gives up within seconds while a saturated
+    datasette can stay unavailable for minutes. Raises the real HTTPError, RetryError or
+    ConnectionError, or a RuntimeError naming the URL for a persistently empty body, once
+    attempts are exhausted.
 
     Datasette sits behind CloudFront, which has been observed caching a broken empty response
     for a given query string and serving that same stale entry on every subsequent request -
@@ -58,7 +60,17 @@ def get_with_retry(session: requests.Session, url: str, params: dict = None) -> 
         request_params = dict(params or {})
         if attempt > 1:
             request_params["_cb"] = f"{time.time()}-{attempt}"
-        response = session.get(url, params=request_params)
+        try:
+            response = session.get(url, params=request_params)
+        except (requests.exceptions.RetryError, requests.exceptions.ConnectionError) as error:
+            if attempt == EMPTY_RESPONSE_RETRY_ATTEMPTS:
+                raise
+            logger.warning(
+                "Retrying %s after %s (attempt %d/%d)",
+                url, error, attempt, EMPTY_RESPONSE_RETRY_ATTEMPTS,
+            )
+            time.sleep(EMPTY_RESPONSE_RETRY_BACKOFF_SECONDS * attempt)
+            continue
         if not _is_retryable_response(response):
             break
         if attempt < EMPTY_RESPONSE_RETRY_ATTEMPTS:
