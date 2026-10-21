@@ -39,8 +39,10 @@ def main(output_dir: str):
     # ------------------------------------------------------------
     # Load and filter expectations
     # ------------------------------------------------------------
-    df = fetch_datasette_csv_table("expectation", low_memory=False)
-    df = df[df["operation"] == "duplicate_geometry_check"].copy()
+    # Filter server-side: the full expectation table exceeds datasette's CSV size limit
+    df = fetch_datasette_csv_table(
+        "expectation", filters={"operation__exact": "duplicate_geometry_check"}, low_memory=False
+    )
     if df.empty:
         os.makedirs(output_dir, exist_ok=True)
         out = os.path.join(output_dir, "duplicate_entity_expectation.csv")

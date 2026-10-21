@@ -154,7 +154,19 @@ def follow_datasette_next_url(url: str, session: requests.Session = None) -> pd.
     return pd.DataFrame(rows, columns=columns)
 
 
-def fetch_datasette_csv_table(table: str, db: str = "digital-land", url: str = DATASETTE_URL, **kwargs) -> pd.DataFrame:
-    """Fetch a full Datasette table as a streamed CSV (e.g. organisation, endpoint, source)."""
-    table_url = f"{url}/{db}/{table}.csv?_stream=on"
-    return read_csv_with_retry(table_url, **kwargs)
+# datasette stops streaming a CSV once it reaches max_csv_mb (100MB) and appends this line,
+# still returning a 200 - pandas would otherwise silently parse the partial file.
+DATASETTE_CSV_TRUNCATED_MARKER = "CSV contains more than"
+
+
+def fetch_datasette_csv_table(table: str, db: str = "digital-land", url: str = DATASETTE_URL, filters: dict = None, **kwargs) -> pd.DataFrame:
+    """Fetch a full Datasette table as a streamed CSV (e.g. organisation, endpoint, source).
+
+    filters are applied server-side as datasette column filters, e.g. {"operation__exact": "x"}.
+    """
+    session = get_http_session()
+    table_url = f"{url}/{db}/{table}.csv"
+    response = get_with_retry(session, table_url, params={"_stream": "on", **(filters or {})})
+    if response.text.rstrip().splitlines()[-1].startswith(DATASETTE_CSV_TRUNCATED_MARKER):
+        raise ValueError(f"Datasette CSV for {db}/{table} was truncated at the size limit - add filters to reduce it: {table_url}")
+    return pd.read_csv(StringIO(response.text), **kwargs)
