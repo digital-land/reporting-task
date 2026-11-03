@@ -351,6 +351,29 @@ Counts operational issues logged per day over the last 6 months.
 
 ---
 
+### plan_timetable_event_date_history.py
+
+Produces an event-date history for every plan-timetable entity (authoritative data only), so users can track slippage and confirm which plan events have held steady. The same history is written in two layouts so users can pick whichever suits them.
+
+**What it does:**
+
+- Fetches every `event-date` fact from the plan-timetable `fact`/`fact_resource` tables where `priority = 2` (data supplied by the organisation that owns the entity, i.e. authoritative)
+- Excludes plan events owned by MHCLG (`government-organisation:D1342`), which pass the authoritative filter but aren't an authority's own timetable
+- Looks up when each resource was collected from the digital-land `resource` table
+- Orders each entity's values by `entry_date` (as the platform does when choosing an entity's current value), breaking ties by collection date then line in the file - publishers have changed an event-date without updating its entry-date, and `entry_date` is often publisher-supplied rather than the collection date
+- Takes one event-date per entity per upload (where a file has two lines for the same entity, the one with the later entry-date, then the later line, as the platform would), and collapses consecutive uploads of an unchanged value, so only real changes count - a value that changes and then changes back is two changes
+- **Long layout:** a `first recorded` row per entity plus one row per change, marked `moved later` or `moved earlier`, with `days_moved` giving the size of the move (positive for later, negative for earlier) and `notes` from the upload where that event-date first appeared - which is where publishers sometimes explain a move (e.g. "consultation end date extended by 2 weeks"). `status` is `changed` for every row of an entity whose event-date has ever changed, and `unchanged` otherwise, so the report can be filtered either way. Includes organisation, sorted by entity then entry date
+- **Wide layout:** one row per entity - its `FIRST` event-date followed by `REVISION 1`, `REVISION 2`, ... for each change, with at least two `REVISION` columns and more added when an entity has been revised more often. Includes `organisation` and `organisation-name`, so joint plans published by more than one authority under the same reference can be told apart. Adds the current `entry-date`, `actual-date` and `notes` as the platform shows them - the latest non-blank value of each from any line of the organisation's data, since the platform doesn't clear a value when a later upload leaves it blank. Sorted by entity
+
+**Outputs:**
+
+- `plan_timetable_event_date_history_long.csv`
+- `plan_timetable_event_date_history_wide.csv`
+
+**Run:** `python src/plan_timetable_event_date_history.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ### runaway_resources.py
 
 Flags endpoints producing an unusually high number of resources, indicating a possible "runaway" pipeline producing excess snapshots.
