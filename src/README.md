@@ -57,6 +57,28 @@ Compares entity counts between the Platform and dataset_resource data for ODP da
 
 ---
 
+### documentation_url_tasks.py
+
+Reports endpoints that are no longer linked from their documentation page, for spotting an LPA that has moved its data to a new URL.
+
+**What it does:**
+
+- Fetches the nightly task table and keeps the tasks with `task_source = documentation-url`. These are raised by the task pipeline in [pyspark-jobs](https://github.com/digital-land/pyspark-jobs), which fetches each live endpoint's documentation page and checks it still links to the endpoint URL, so this report reads the task table rather than checking anything itself
+- Spreads each task's details into columns: the endpoint URL, the documentation URL(s) checked, the result, and any fetch errors (`http-403`, `timeout`, ...). The result is one of:
+  - `not-found` — the page was read but no longer links to the endpoint (for an ArcGIS or WFS endpoint, to its service)
+  - `documentation-url-gone` — the page returns 404 or 410, so it has been removed
+  - `unreachable` — the page could not be read for another reason, usually a site blocking automated requests (403)
+- Lists the data-file links found on the page (`candidate_links`), and picks out `likely_replacement`: a link with the same file name as the endpoint at a new URL, as a council website gives each new upload
+- Shows where a documentation page now redirects to (`redirects`), when it has moved to a different page
+- Adds `guidance` for each row on what the LPA needs to do, worded so it can be forwarded to them
+- Adds organisation names, and sorts `not-found` rows first, then `documentation-url-gone`, then `unreachable`
+
+**Output:** `documentation_url_tasks.csv`
+
+**Run:** `python src/documentation_url_tasks.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ### duplicate_geometry_expectations.py
 
 Extracts and enriches duplicate-geometry entity matches flagged by expectation checks, with organisation and ODP context.
