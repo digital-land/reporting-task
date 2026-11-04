@@ -358,6 +358,7 @@ Produces an event-date history for every plan-timetable entity (authoritative da
 **What it does:**
 
 - Fetches every `event-date` fact from the plan-timetable `fact`/`fact_resource` tables where `priority = 2` (data supplied by the organisation that owns the entity, i.e. authoritative)
+- Includes every authoritative plan event, including those with no event-date yet (often optional stages such as an examination pause): these get a single `no event-date` row in the long layout and blank `FIRST`/`REVISION` columns in the wide layout
 - Excludes plan events owned by MHCLG (`government-organisation:D1342`), which pass the authoritative filter but aren't an authority's own timetable
 - Looks up when each resource was collected from the digital-land `resource` table
 - Orders each entity's values by `entry_date` (as the platform does when choosing an entity's current value), breaking ties by collection date then line in the file - publishers have changed an event-date without updating its entry-date, and `entry_date` is often publisher-supplied rather than the collection date
