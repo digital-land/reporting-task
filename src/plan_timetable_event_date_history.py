@@ -67,6 +67,18 @@ WHERE fr.field IN ('actual-date', 'notes')
 ORDER BY fr.entity, fr.resource, fr.entry_number, fr.field
 """
 
+# every authoritative entity, including those with no event-date yet (often optional stages such
+# as an examination pause that a council hasn't needed to schedule), with the entry date the
+# platform shows for it
+AUTHORITATIVE_ENTITIES_SQL = f"""
+SELECT entity,
+       max(entry_date) AS entry_date
+FROM fact_resource
+WHERE priority = {AUTHORITATIVE_PRIORITY}
+GROUP BY entity
+ORDER BY entity
+"""
+
 ENTITY_SQL = """
 SELECT entity,
        reference,
@@ -104,6 +116,8 @@ LONG_COLUMNS = [
 ]
 
 FACT_ORDER = ["entity", "entry_date", "collected_date", "entry_number"]
+
+NO_EVENT_DATE = "no event-date"
 
 
 def order_facts(facts: pd.DataFrame) -> pd.DataFrame:
@@ -147,15 +161,35 @@ def event_date_changes(facts: pd.DataFrame) -> pd.DataFrame:
     return snapshots[is_first | (snapshots["event_date"] != snapshots["previous_event_date"])].copy()
 
 
-def build_event_date_history(facts: pd.DataFrame) -> pd.DataFrame:
+def current_line_fields(line_facts: pd.DataFrame) -> pd.DataFrame:
+    """
+    The actual_date and notes the platform currently shows for each entity.
+
+    line_facts needs entity, entry_date, collected_date, entry_number, actual_date, notes - one
+    row per line with either, whether or not that line has an event-date, as the platform takes
+    them from any line. last skips blanks, matching the platform: it keeps each field's latest
+    value separately, and a later upload leaving notes or actual-date blank doesn't clear one
+    given earlier.
+    """
+    return order_facts(line_facts).groupby("entity")[["actual_date", "notes"]].last()
+
+
+def build_event_date_history(facts: pd.DataFrame, undated: pd.DataFrame = None) -> pd.DataFrame:
     """
     Long layout: a first recorded row per entity, plus one row per change, with its direction,
     how many days it moved and the notes from the upload that made it. status is "changed" on
     every row of an entity whose event-date has ever changed, so either set can be filtered.
+
+    undated (entity, entry_date, notes) lists entities with no event-date at all; each gets a
+    single row with status "no event-date", so every plan event appears.
     """
+    columns = ["entity", "entry_date", "previous_event_date", "new_event_date",
+               "direction", "days_moved", "status", "notes"]
+    undated_rows = pd.DataFrame(columns=columns) if undated is None else (
+        undated[["entity", "entry_date", "notes"]].assign(status=NO_EVENT_DATE).reindex(columns=columns)
+    )
     if facts.empty:
-        return pd.DataFrame(columns=["entity", "entry_date", "previous_event_date",
-                                     "new_event_date", "direction", "days_moved", "status", "notes"])
+        return undated_rows.reset_index(drop=True)
 
     history = event_date_changes(facts)
 
@@ -171,42 +205,46 @@ def build_event_date_history(facts: pd.DataFrame) -> pd.DataFrame:
     changed_entities = history.loc[history["previous_event_date"].notna(), "entity"].unique()
     history["status"] = history["entity"].isin(changed_entities).map({True: "changed", False: "unchanged"})
 
-    return history.rename(columns={"event_date": "new_event_date"})[
-        ["entity", "entry_date", "previous_event_date", "new_event_date",
-         "direction", "days_moved", "status", "notes"]
-    ].reset_index(drop=True)
+    history = history.rename(columns={"event_date": "new_event_date"})[columns]
+    if undated_rows.empty:
+        return history.reset_index(drop=True)
+    return pd.concat([history, undated_rows], ignore_index=True)
 
 
 def revision_columns(count: int) -> list:
     return ["FIRST"] + [f"REVISION {n}" for n in range(1, max(count, MIN_REVISION_COLUMNS) + 1)]
 
 
-def build_event_date_timetable(facts: pd.DataFrame, line_facts: pd.DataFrame) -> pd.DataFrame:
+def build_event_date_timetable(
+    facts: pd.DataFrame, line_facts: pd.DataFrame, undated: pd.DataFrame = None
+) -> pd.DataFrame:
     """
     Wide layout: one row per entity - its FIRST event-date, each REVISION after it, and the
     entry-date, actual-date and notes the platform currently shows.
 
-    facts needs the columns event_date_changes does. line_facts needs entity, entry_date,
-    collected_date, entry_number, actual_date, notes - one row per line with either, whether or
-    not that line has an event-date, as the platform takes them from any line.
+    facts needs the columns event_date_changes does, and line_facts the columns
+    current_line_fields does. undated (entity, entry_date) lists entities with no event-date at
+    all; each gets a row with the event-date columns blank, so every plan event appears.
     """
     if facts.empty:
-        return pd.DataFrame(columns=["entity"] + revision_columns(0) + ["entry-date", "actual-date", "notes"])
+        timetable = pd.DataFrame(columns=revision_columns(0), index=pd.Index([], name="entity"))
+        entry_date = pd.Series(dtype=object, name="entry-date")
+    else:
+        revisions = event_date_changes(facts)
+        revisions["revision"] = revisions.groupby("entity").cumcount()
 
-    revisions = event_date_changes(facts)
-    revisions["revision"] = revisions.groupby("entity").cumcount()
+        timetable = revisions.pivot(index="entity", columns="revision", values="event_date")
+        columns = revision_columns(int(revisions["revision"].max()))
+        timetable = timetable.reindex(columns=range(len(columns)))
+        timetable.columns = columns
 
-    timetable = revisions.pivot(index="entity", columns="revision", values="event_date")
-    columns = revision_columns(int(revisions["revision"].max()))
-    timetable = timetable.reindex(columns=range(len(columns)))
-    timetable.columns = columns
+        entry_date = resource_snapshots(facts).groupby("entity")["entry_date"].last().rename("entry-date")
 
-    entry_date = resource_snapshots(facts).groupby("entity")["entry_date"].last().rename("entry-date")
-    # last skips blanks, matching the platform: it keeps each field's latest value separately, and a
-    # later upload leaving notes or actual-date blank doesn't clear one given earlier
-    current = order_facts(line_facts).groupby("entity")[["actual_date", "notes"]].last()
-    current = current.rename(columns={"actual_date": "actual-date"})
+    if undated is not None and not undated.empty:
+        timetable = timetable.reindex(timetable.index.union(pd.Index(undated["entity"], name="entity")))
+        entry_date = entry_date.combine_first(undated.set_index("entity")["entry_date"]).rename("entry-date")
 
+    current = current_line_fields(line_facts).rename(columns={"actual_date": "actual-date"})
     return timetable.join(entry_date).join(current).reset_index()
 
 
@@ -243,14 +281,23 @@ def main(output_dir: str):
     organisations["organisation_entity"] = organisations["organisation_entity"].astype("Int64")
     entities = entities.merge(organisations, on="organisation_entity", how="left")
 
-    excluded = facts["entity"].isin(entities.loc[entities["organisation"].isin(EXCLUDED_ORGANISATIONS), "entity"])
-    logger.info(f"Excluding {facts.loc[excluded, 'entity'].nunique()} plan events owned by {EXCLUDED_ORGANISATIONS}")
-    facts = facts[~excluded]
-    line_facts = line_facts[line_facts["entity"].isin(facts["entity"])]
+    authoritative = datasette_query_paginated("plan-timetable", AUTHORITATIVE_ENTITIES_SQL)
+    excluded_entities = entities.loc[entities["organisation"].isin(EXCLUDED_ORGANISATIONS), "entity"]
+    logger.info(
+        f"Excluding {authoritative['entity'].isin(excluded_entities).sum()} plan events owned by "
+        f"{EXCLUDED_ORGANISATIONS}"
+    )
+    authoritative = authoritative[~authoritative["entity"].isin(excluded_entities)]
+    facts = facts[~facts["entity"].isin(excluded_entities)]
+    line_facts = line_facts[~line_facts["entity"].isin(excluded_entities)]
+
+    undated = authoritative[~authoritative["entity"].isin(facts["entity"])]
+    undated = undated.merge(current_line_fields(line_facts)[["notes"]], left_on="entity", right_index=True, how="left")
+    logger.info(f"{len(undated)} authoritative plan events have no event-date")
 
     os.makedirs(output_dir, exist_ok=True)
 
-    history = build_event_date_history(facts).merge(
+    history = build_event_date_history(facts, undated).merge(
         entities[["entity", "reference", "organisation", "organisation_name", "plan", "plan_event"]],
         on="entity",
         how="left",
@@ -261,10 +308,11 @@ def main(output_dir: str):
     history.to_csv(long_file, index=False)
     logger.info(
         f"Saved {long_file}: {len(history)} rows, {history['entity'].nunique()} plan events, "
-        f"{history.loc[history['status'] == 'changed', 'entity'].nunique()} with a changed event-date"
+        f"{history.loc[history['status'] == 'changed', 'entity'].nunique()} with a changed event-date, "
+        f"{(history['status'] == NO_EVENT_DATE).sum()} with no event-date"
     )
 
-    timetable = build_event_date_timetable(facts, line_facts).merge(
+    timetable = build_event_date_timetable(facts, line_facts, undated).merge(
         entities[["entity", "reference", "organisation", "organisation_name", "plan", "plan_event"]].rename(
             columns={"organisation_name": "organisation-name", "plan_event": "plan-event"}
         ),

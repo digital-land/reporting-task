@@ -221,3 +221,33 @@ def test_long_empty_input_returns_empty_history():
 
     assert history.empty
     assert "status" in history.columns
+
+
+# plan events with no event-date
+
+
+def test_undated_plan_events_appear_in_the_wide_layout_with_blank_dates():
+    event_dates = facts([(1, "2026-05-14", 1, "2026-05-15", "2027-06-01")])
+    line_facts = facts([(2, "2026-05-14", 2, "2026-05-15", None)], notes=["Only if needed"])
+    undated = pd.DataFrame({"entity": [2], "entry_date": ["2026-05-14"]})
+
+    timetable = build_timetable(event_dates, line_facts, undated)
+
+    assert timetable["entity"].tolist() == [1, 2]
+    assert timetable_dates(timetable, 2) == ["", "", ""]
+    row = timetable.set_index("entity").loc[2]
+    assert row["entry-date"] == "2026-05-14"
+    assert row["notes"] == "Only if needed"
+
+
+def test_undated_plan_events_get_a_single_no_event_date_row_in_the_long_layout():
+    undated = pd.DataFrame({"entity": [2], "entry_date": ["2026-05-14"], "notes": ["Only if needed"]})
+
+    history = build_event_date_history(facts([(1, "2026-01-01", 1, "2026-01-02", "2027-06-01")]), undated)
+
+    row = history.set_index("entity").loc[2]
+    assert row["status"] == "no event-date"
+    assert row["entry_date"] == "2026-05-14"
+    assert row["notes"] == "Only if needed"
+    assert pd.isna(row["new_event_date"]) and pd.isna(row["direction"])
+    assert history.set_index("entity").loc[1, "status"] == "unchanged"
