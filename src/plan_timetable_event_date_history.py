@@ -273,7 +273,7 @@ def main(output_dir: str):
     ).sort_values("entity")
     revisions = [column for column in timetable.columns if column == "FIRST" or column.startswith("REVISION ")]
     timetable = timetable[
-        ["reference", "organisation", "organisation-name", "plan", "plan-event"]
+        ["entity", "reference", "organisation", "organisation-name", "plan", "plan-event"]
         + revisions
         + ["entry-date", "actual-date", "notes"]
     ]
