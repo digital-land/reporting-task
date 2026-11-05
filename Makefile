@@ -28,6 +28,9 @@ data/reporting/deleted_entities.csv: data/reporting
 data/reporting/dataset_resource_odp_detailed_counts.csv data/reporting/dataset_resource_vs_platform_odp_summary.csv: data/reporting
 	python src/dataset_resource_vs_platform_report.py --output-dir data/reporting
 
+data/reporting/documentation_url_tasks.csv: data/reporting
+	python src/documentation_url_tasks.py --output-dir data/reporting
+
 data/reporting/duplicate_entity_expectation.csv: data/reporting
 	python src/duplicate_geometry_expectations.py --output-dir data/reporting
 
@@ -94,6 +97,7 @@ data/reporting/runaway_resources.csv: data/reporting
 all: data/reporting/deleted_entities.csv \
 	data/reporting/dataset_resource_odp_detailed_counts.csv \
 	data/reporting/dataset_resource_vs_platform_odp_summary.csv \
+	data/reporting/documentation_url_tasks.csv \
 	data/reporting/duplicate_entity_expectation.csv \
 	data/reporting/endpoint_dataset_issue_type_summary.csv \
 	data/reporting/all_endpoints_and_documentation_urls.csv \
