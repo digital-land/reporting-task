@@ -10,6 +10,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 DATASETTE_URL = os.environ.get("DATASETTE_URL", "https://datasette.planning.data.gov.uk")
+FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # datasette has occasionally returned a 400, or a 200 with an empty body, for requests that
 # succeed a moment later when retried - neither is caught by get_http_session's transport-level
@@ -86,8 +87,21 @@ def get_with_retry(session: requests.Session, url: str, params: dict = None) -> 
     return response
 
 
+def task_url() -> str:
+    """Where to read task.csv from: straight from S3 in the pipeline, so the CDN cache can't
+    serve an old copy, or the public files CDN for local runs."""
+    bucket = os.environ.get("COLLECTION_DATA_BUCKET")
+    if bucket:
+        return f"s3://{bucket}/dataset/task.csv"
+    return f"{FILES_URL}/dataset/task.csv"
+
+
 def read_csv_with_retry(url: str, **kwargs) -> pd.DataFrame:
     """Fetch a CSV from a URL with retry logic and parse into a DataFrame."""
+    # requests can't open s3:// paths; pandas reads them with s3fs, and the AWS client
+    # underneath does its own retrying
+    if url.startswith("s3://"):
+        return pd.read_csv(url, **kwargs)
     session = get_http_session()
     response = get_with_retry(session, url)
     return pd.read_csv(StringIO(response.text), **kwargs)

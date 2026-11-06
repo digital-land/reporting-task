@@ -6,5 +6,7 @@ pyproj
 awscli
 requests
 pyarrow
+# unpinned, pip resolves this to s3fs 0.4.2 alongside awscli, older than pandas supports
+s3fs>=2024.3
 pytest
 requests-mock

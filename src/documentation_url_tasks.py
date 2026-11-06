@@ -5,12 +5,11 @@ import os
 
 import pandas as pd
 
-from utils import read_csv_with_retry
+from utils import read_csv_with_retry, task_url
 
 logger = logging.getLogger(__name__)
 
 FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
-TASK_URL = f"{FILES_URL}/dataset/task.csv"
 ORGS_URL = f"{FILES_URL}/organisation-collection/dataset/organisation.csv"
 
 # The task pipeline (pyspark-jobs) checks each live endpoint is still linked from its
@@ -130,7 +129,7 @@ def build_report(tasks: pd.DataFrame, orgs: pd.DataFrame) -> pd.DataFrame:
 
 
 def main(output_dir):
-    tasks = read_csv_with_retry(TASK_URL, dtype=str, keep_default_na=False)
+    tasks = read_csv_with_retry(task_url(), dtype=str, keep_default_na=False)
     orgs = read_csv_with_retry(ORGS_URL, dtype=str, keep_default_na=False)
 
     report = build_report(tasks, orgs)

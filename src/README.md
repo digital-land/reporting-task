@@ -63,7 +63,7 @@ Reports endpoints that are no longer linked from their documentation page, for s
 
 **What it does:**
 
-- Fetches the nightly task table and keeps the tasks with `task_source = documentation-url`. These are raised by the task pipeline in [pyspark-jobs](https://github.com/digital-land/pyspark-jobs), which fetches each live endpoint's documentation page and checks it still links to the endpoint URL, so this report reads the task table rather than checking anything itself
+- Fetches the nightly task table (from S3 when `COLLECTION_DATA_BUCKET` is set, so the CDN cache can't serve an old copy, otherwise from the public files site) and keeps the tasks with `task_source = documentation-url`. These are raised by the task pipeline in [pyspark-jobs](https://github.com/digital-land/pyspark-jobs), which fetches each live endpoint's documentation page and checks it still links to the endpoint URL, so this report reads the task table rather than checking anything itself
 - Spreads each task's details into columns: the endpoint URL, the documentation URL(s) checked, the result, and any fetch errors (`http-403`, `timeout`, ...). The result is one of:
   - `not-found` — the page was read but no longer links to the endpoint (for an ArcGIS or WFS endpoint, to its service)
   - `documentation-url-gone` — the page returns 404 or 410, so it has been removed

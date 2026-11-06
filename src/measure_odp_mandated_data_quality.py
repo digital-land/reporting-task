@@ -17,9 +17,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely.wkt
-from utils import read_csv_with_retry, datasette_query, datasette_query_paginated
+from utils import read_csv_with_retry, datasette_query, datasette_query_paginated, task_url
 
-TASK_CSV_URL = "https://files.planning.data.gov.uk/dataset/task.csv"
 
 ODP_DATASETS = [
     "conservation-area",
@@ -144,7 +143,7 @@ def main() -> None:
     # expectation "count_lpa_boundary" operation (entities outside the LPA boundary) are used.
     # No task.csv equivalent was found for the old manual-count-match expectation check, which
     # is dropped rather than guessed at.
-    task_df = read_csv_with_retry(TASK_CSV_URL, dtype="str").rename(columns={"dataset": "pipeline"})
+    task_df = read_csv_with_retry(task_url(), dtype="str").rename(columns={"dataset": "pipeline"})
     task_df = task_df[task_df["organisation"].isin(active_organisations)]
 
     # Endpoint-error tasks - a "log" task records a currently-failing endpoint (a non-200

@@ -16,9 +16,7 @@ import os
 
 import numpy as np
 import pandas as pd
-from utils import datasette_query, datasette_query_paginated, read_csv_with_retry
-
-TASK_CSV_URL = "https://files.planning.data.gov.uk/dataset/task.csv"
+from utils import datasette_query, datasette_query_paginated, read_csv_with_retry, task_url
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,7 +109,7 @@ def main() -> None:
     # by dataset/organisation(/endpoint/resource), with a `details` JSON blob whose shape
     # depends on task_source. Only "issue" and "provision" (authoritativeness) tasks are used by
     # this report, restricted to single-source pipelines to match active_endpoints above.
-    task_df = read_csv_with_retry(TASK_CSV_URL, dtype="str").rename(columns={"dataset": "pipeline"})
+    task_df = read_csv_with_retry(task_url(), dtype="str").rename(columns={"dataset": "pipeline"})
     task_df = task_df[
         task_df["organisation"].isin(active_organisations) & task_df["pipeline"].isin(single_source_pipelines)
     ]

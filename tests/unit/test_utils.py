@@ -5,6 +5,7 @@ import requests
 
 from utils import (
     DATASETTE_URL,
+    FILES_URL,
     EMPTY_RESPONSE_RETRY_ATTEMPTS,
     datasette_query,
     datasette_query_paginated,
@@ -12,6 +13,7 @@ from utils import (
     follow_datasette_next_url,
     get_with_retry,
     read_csv_with_retry,
+    task_url,
 )
 
 
@@ -266,3 +268,24 @@ def test_get_with_retry_raises_transport_error_after_exhausting_attempts(request
         get_with_retry(session, "https://example.com/data.csv")
 
     assert requests_mock.call_count == EMPTY_RESPONSE_RETRY_ATTEMPTS
+
+
+def test_read_csv_with_retry_reads_s3_paths_with_pandas(monkeypatch):
+    calls = []
+    monkeypatch.setattr("utils.pd.read_csv", lambda url, **kwargs: calls.append((url, kwargs)))
+
+    read_csv_with_retry("s3://test-bucket/dataset/task.csv", dtype=str)
+
+    assert calls == [("s3://test-bucket/dataset/task.csv", {"dtype": str})]
+
+
+def test_task_url_reads_from_s3_in_the_pipeline(monkeypatch):
+    monkeypatch.setenv("COLLECTION_DATA_BUCKET", "test-collection-data")
+
+    assert task_url() == "s3://test-collection-data/dataset/task.csv"
+
+
+def test_task_url_falls_back_to_the_files_cdn_locally(monkeypatch):
+    monkeypatch.delenv("COLLECTION_DATA_BUCKET", raising=False)
+
+    assert task_url() == f"{FILES_URL}/dataset/task.csv"
