@@ -3,28 +3,26 @@ import ast
 import argparse
 import os
 import logging
-from utils import read_csv_with_retry, fetch_datasette_csv_table
+from utils import read_csv_with_retry, fetch_datasette_csv_table, files_url
 logger = logging.getLogger(__name__)
-
-FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # Entity tables to enrich A/B sides
 ENTITY_URLS = {
-    "conservation-area": f"{FILES_URL}/dataset/conservation-area.parquet",
-    "article-4-direction-area": f"{FILES_URL}/dataset/article-4-direction-area.parquet",
-    "listed-building-outline": f"{FILES_URL}/dataset/listed-building-outline.parquet",
-    "tree-preservation-zone": f"{FILES_URL}/dataset/tree-preservation-zone.parquet",
-    "tree": f"{FILES_URL}/dataset/tree.parquet",
+    "conservation-area": files_url("dataset/conservation-area.parquet"),
+    "article-4-direction-area": files_url("dataset/article-4-direction-area.parquet"),
+    "listed-building-outline": files_url("dataset/listed-building-outline.parquet"),
+    "tree-preservation-zone": files_url("dataset/tree-preservation-zone.parquet"),
+    "tree": files_url("dataset/tree.parquet"),
 }
 
 # Orgs lookup
-ORGS_URL = f"{FILES_URL}/organisation-collection/dataset/organisation.csv"
+ORGS_URL = files_url("organisation-collection/dataset/organisation.csv")
 LOOKUP_URLS = {
-    "conservation-area": f"{FILES_URL}/config/pipeline/conservation-area/lookup.csv",
-    "article-4-direction-area": f"{FILES_URL}/config/pipeline/article-4-direction/lookup.csv",
-    "listed-building-outline": f"{FILES_URL}/config/pipeline/listed-building/lookup.csv",
-    "tree-preservation-zone": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
-    "tree": f"{FILES_URL}/config/pipeline/tree-preservation-order/lookup.csv",
+    "conservation-area": files_url("config/pipeline/conservation-area/lookup.csv"),
+    "article-4-direction-area": files_url("config/pipeline/article-4-direction/lookup.csv"),
+    "listed-building-outline": files_url("config/pipeline/listed-building/lookup.csv"),
+    "tree-preservation-zone": files_url("config/pipeline/tree-preservation-order/lookup.csv"),
+    "tree": files_url("config/pipeline/tree-preservation-order/lookup.csv"),
 }
 
 

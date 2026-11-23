@@ -2,11 +2,9 @@ import pandas as pd
 import json
 import os
 import logging
-from utils import follow_datasette_next_url, fetch_datasette_csv_table
+from utils import follow_datasette_next_url, fetch_datasette_csv_table, files_url
 
 logger = logging.getLogger(__name__)
-
-FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
 
 # URLs for data sources
 ENDPOINT_URL = "https://datasette.planning.data.gov.uk/digital-land/expectation.json?passed__exact=False&operation__exact=count_deleted_entities&_sort=rowid&_size=max"
@@ -57,7 +55,7 @@ def main(output_dir: str):
     # Get unique datasets and build URLs dynamically
     unique_datasets = df_final['dataset'].unique()
     ENTITY_URLS = {
-        dataset: f"{FILES_URL}/dataset/{dataset}.parquet"
+        dataset: files_url(f"dataset/{dataset}.parquet")
         for dataset in unique_datasets
     }
 

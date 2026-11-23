@@ -3,6 +3,8 @@ import json
 import pytest
 import requests
 
+from dataset_resource_vs_platform_report import open_options
+
 from utils import (
     DATASETTE_URL,
     FILES_URL,
@@ -10,6 +12,7 @@ from utils import (
     datasette_query,
     datasette_query_paginated,
     fetch_datasette_csv_table,
+    files_url,
     follow_datasette_next_url,
     get_with_retry,
     read_csv_with_retry,
@@ -289,3 +292,27 @@ def test_task_url_falls_back_to_the_files_cdn_locally(monkeypatch):
     monkeypatch.delenv("COLLECTION_DATA_BUCKET", raising=False)
 
     assert task_url() == f"{FILES_URL}/dataset/task.csv"
+
+
+def test_files_url_reads_from_s3_in_the_pipeline(monkeypatch):
+    monkeypatch.setenv("COLLECTION_DATA_BUCKET", "test-collection-data")
+    assert files_url("dataset/task") == "s3://test-collection-data/dataset/task"
+
+
+def test_files_url_falls_back_to_the_files_cdn_locally(monkeypatch):
+    monkeypatch.delenv("COLLECTION_DATA_BUCKET", raising=False)
+    assert files_url("abc/dataset/xyz") == f"{FILES_URL}/abc/dataset/xyz"
+
+
+def test_open_options_test_s3(monkeypatch):
+    monkeypatch.setenv("COLLECTION_DATA_BUCKET", "test-collection-data")
+    options = open_options(files_url("dataset/task"))
+    assert "config_kwargs" in options
+    assert "client_kwargs" not in options
+
+
+def test_open_options_test_cdn(monkeypatch):
+    monkeypatch.delenv("COLLECTION_DATA_BUCKET", raising=False)
+    options = open_options(files_url("abc/dataset/xyz"))
+    assert "config_kwargs" not in options
+    assert "client_kwargs" in options

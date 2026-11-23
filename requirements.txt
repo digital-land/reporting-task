@@ -10,3 +10,5 @@ pyarrow
 s3fs>=2024.3
 pytest
 requests-mock
+aiohttp
+fsspec

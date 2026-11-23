@@ -9,16 +9,13 @@ with organisation names.
 import pandas as pd
 import os
 import logging
-from utils import read_csv_with_retry, fetch_datasette_csv_table
+from utils import read_csv_with_retry, fetch_datasette_csv_table, files_url
 
 logger = logging.getLogger(__name__)
 
-FILES_URL = os.environ.get("FILES_URL", "https://files.planning.data.gov.uk")
-
-# CSV endpoints with streaming
 ## Using CSVs as the 'listed-building' column is only available in the CSV format
-LISTED_BUILDING_URL = f"{FILES_URL}/dataset/listed-building.csv?_stream=on"
-LISTED_BUILDING_OUTLINE_URL = f"{FILES_URL}/dataset/listed-building-outline.csv?_stream=on"
+LISTED_BUILDING_URL = files_url("dataset/listed-building.csv")
+LISTED_BUILDING_OUTLINE_URL = files_url("dataset/listed-building-outline.csv")
 
 
 def main(output_dir: str):

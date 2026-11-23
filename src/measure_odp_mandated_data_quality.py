@@ -17,7 +17,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely.wkt
-from utils import read_csv_with_retry, datasette_query, datasette_query_paginated, task_url
+from utils import read_csv_with_retry, datasette_query, datasette_query_paginated, task_url, files_url
 
 
 ODP_DATASETS = [
@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
 
 def get_pdp_gdf(dataset: str, geometry_field: str, usecols: list = None) -> gpd.GeoDataFrame:
     df = read_csv_with_retry(
-        f"https://files.planning.data.gov.uk/dataset/{dataset}.csv",
+        files_url(f"dataset/{dataset}.csv"),
         dtype="str",
         usecols=usecols,
     )
