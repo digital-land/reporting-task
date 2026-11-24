@@ -61,8 +61,11 @@ data/reporting/plan_issue.csv:
 data/reporting/plan_status.csv:
 	python src/generate_plans_status_csv.py --output-dir data/reporting
 
-data/reporting/plan_timetable_event_date_history_long.csv data/reporting/plan_timetable_event_date_history_wide.csv: data/reporting
+# one script writes all three, so the other two depend on the first to run it only once
+data/reporting/plan_timetable_event_date_history_long.csv: data/reporting
 	python src/plan_timetable_event_date_history.py --output-dir data/reporting
+
+data/reporting/plan_timetable_event_date_history_wide.csv data/reporting/plan_timetable_plan_duration.csv: data/reporting/plan_timetable_event_date_history_long.csv
 
 data/reporting/listed_building_end_date.csv:
 	python src/listed_building_end_date.py --output-dir data/reporting
@@ -109,6 +112,7 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/plan_status.csv \
 	data/reporting/plan_timetable_event_date_history_long.csv \
 	data/reporting/plan_timetable_event_date_history_wide.csv \
+	data/reporting/plan_timetable_plan_duration.csv \
 	data/reporting/listed_building_end_date.csv \
 	data/reporting/logs_by_week.csv \
 	data/reporting/runaway_resources.csv \

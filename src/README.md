@@ -375,23 +375,28 @@ Counts operational issues logged per day over the last 6 months.
 
 ### plan_timetable_event_date_history.py
 
-Produces an event-date history for every plan-timetable entity (authoritative data only), so users can track slippage and confirm which plan events have held steady. The same history is written in two layouts so users can pick whichever suits them.
+Produces an event-date history for every local plan's plan-timetable entities (authoritative data only), so users can track slippage and confirm which plan events have held steady. The same history is written in two layouts so users can pick whichever suits them.
 
 **What it does:**
 
 - Fetches every `event-date` fact from the plan-timetable `fact`/`fact_resource` tables where `priority = 2` (data supplied by the organisation that owns the entity, i.e. authoritative)
-- Includes every authoritative plan event, including those with no event-date yet (often optional stages such as an examination pause): these get a single `no event-date` row in the long layout and blank `FIRST`/`REVISION` columns in the wide layout
+- Includes every authoritative local plan event, including those with no event-date yet (often optional stages such as an examination pause): these get a single `no event-date` row in the long layout and blank `FIRST`/`REVISION` columns in the wide layout
 - Excludes plan events owned by MHCLG (`government-organisation:D1342`), which pass the authoritative filter but aren't an authority's own timetable
+- Works out each plan's `plan_type` by looking its reference (or name) up in the `local-plan`, `minerals-plan`, `waste-plan` and `supplementary-plan` datasets. A combined plan has more than one, separated by semicolons; where the timetable's plan isn't in any of them it's `local-plan (inferred)` if its reference says it's a local plan and doesn't mention minerals or waste, and otherwise `unknown`. This is usually a local plan whose timetable doesn't use the plan's reference
+- Excludes anything that isn't a local plan: plans only in the minerals, waste or supplementary plan datasets, county councils (`E10` ONS codes), and a list of individually reviewed plans the datasets can't identify, including development plan documents (`EXCLUDED_PLANS`). Combined plans, core strategies and plans of inferred or unknown type are kept. The log warns when a listed plan no longer matches anything
+- Adds each organisation's ONS code from the organisation table's `statistical_geography`. Joint planning groups have none of their own, so they get their members' codes separated by semicolons
 - Looks up when each resource was collected from the digital-land `resource` table
 - Orders each entity's values by `entry_date` (as the platform does when choosing an entity's current value), breaking ties by collection date then line in the file - publishers have changed an event-date without updating its entry-date, and `entry_date` is often publisher-supplied rather than the collection date
 - Takes one event-date per entity per upload (where a file has two lines for the same entity, the one with the later entry-date, then the later line, as the platform would), and collapses consecutive uploads of an unchanged value, so only real changes count - a value that changes and then changes back is two changes
-- **Long layout:** a `first recorded` row per entity plus one row per change, marked `moved later` or `moved earlier`, with `days_moved` giving the size of the move (positive for later, negative for earlier) and `notes` from the upload where that event-date first appeared - which is where publishers sometimes explain a move (e.g. "consultation end date extended by 2 weeks"). `status` is `changed` for every row of an entity whose event-date has ever changed, and `unchanged` otherwise, so the report can be filtered either way. Includes organisation, sorted by entity then entry date
+- **Long layout:** a `first recorded` row per entity plus one row per change, marked `moved later` or `moved earlier`, with `days_moved` giving the size of the move (positive for later, negative for earlier) and `notes` from the upload where that event-date first appeared - which is where publishers sometimes explain a move (e.g. "consultation end date extended by 2 weeks"). `status` is `changed` for every row of an entity whose event-date has ever changed, and `unchanged` otherwise, so the report can be filtered either way. Includes organisation, and the event's current `actual_date` on each of its rows, sorted by entity then entry date
 - **Wide layout:** one row per entity - its `FIRST` event-date followed by `REVISION 1`, `REVISION 2`, ... for each change, with at least two `REVISION` columns and more added when an entity has been revised more often. Includes `organisation` and `organisation-name`, so joint plans published by more than one authority under the same reference can be told apart. Adds the current `entry-date`, `actual-date` and `notes` as the platform shows them - the latest non-blank value of each from any line of the organisation's data, since the platform doesn't clear a value when a later upload leaves it blank. Sorted by entity
+- **Plan duration:** one row per organisation and plan with a `gateway-1-self-assessment` or `adopted` event, with the number of days to the currently predicted adoption date from when Gateway 1 actually happened and from when it was first predicted, and whether each is within 30 calendar months. Values are blank where the timetable doesn't have the dates, and the 30 month columns are also blank where adoption isn't after Gateway 1. "First predicted" is the earliest version collected. A joint plan has a row for each organisation that publishes it
 
 **Outputs:**
 
 - `plan_timetable_event_date_history_long.csv`
 - `plan_timetable_event_date_history_wide.csv`
+- `plan_timetable_plan_duration.csv`
 
 **Run:** `python src/plan_timetable_event_date_history.py --output-dir <directory>` (or `python3` depending on your system setup)
 

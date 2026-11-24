@@ -1,6 +1,7 @@
 """
-Builds an event-date history for every plan-timetable entity from authoritative data, so users
-can track slippage (dates moving later) and confirm which plan events have held steady.
+Builds an event-date history for every local plan's plan-timetable entities from authoritative
+data, so users can track slippage (dates moving later) and confirm which plan events have held
+steady.
 
 A plan-timetable entity can be given several event-date values over time. Each value is a fact,
 and fact_resource records every resource (snapshot of the publisher's data) the fact appeared in,
@@ -9,11 +10,14 @@ history in two layouts, so users can pick whichever suits them:
 
 - long: one row per entity's first recorded event-date, plus one row per change
 - wide: one row per entity - the FIRST event-date, then a REVISION column for each change
+
+It also writes a plan-level report of how long each plan is taking from Gateway 1 to adoption.
 """
 
 import argparse
 import logging
 import os
+import re
 
 import pandas as pd
 
@@ -23,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 LONG_OUTPUT_FILE = "plan_timetable_event_date_history_long.csv"
 WIDE_OUTPUT_FILE = "plan_timetable_event_date_history_wide.csv"
+PLAN_DURATION_OUTPUT_FILE = "plan_timetable_plan_duration.csv"
 
 # fact_resource.priority is 2 when the resource came from the organisation that owns the entity,
 # and 1 (the default) otherwise - so priority 2 is the authoritative signal. It lines up with
@@ -33,9 +38,44 @@ AUTHORITATIVE_PRIORITY = 2
 # the authoritative filter above but isn't an authority's own timetable - left out of both reports
 EXCLUDED_ORGANISATIONS = ["government-organisation:D1342"]
 
+# plan-timetable has no plan type of its own, but its plan field is a reference to a plan in one or
+# more of these datasets
+LOCAL_PLAN = "local-plan"
+PLAN_DATASETS = [LOCAL_PLAN, "minerals-plan", "waste-plan", "supplementary-plan"]
+INFERRED_LOCAL_PLAN = "local-plan (inferred)"
+UNKNOWN_PLAN_TYPE = "unknown"
+
+# county councils don't make local plans, only minerals and waste plans
+COUNTY_ONS_PREFIX = "E10"
+
+# plans that aren't local plans but which the plan datasets can't tell us about, either because the
+# timetable's plan reference isn't in any of them or because a development plan document (DPD) is
+# published as a local-plan. Core strategies count as local plans. Reviewed by hand, as plan names
+# aren't a safe guide - e.g. a "MWLP" could be a combined minerals, waste and local plan.
+EXCLUDED_PLANS = [
+    # minerals and waste
+    ("local-authority:MIK", "MWLP"),
+    # supplementary plan
+    ("local-authority:WFUA", "westmorland-and-furness-council-supplementary-plan"),
+    # development plan documents
+    ("local-authority:CON", "Cornwall-council-climate emergency DPD"),
+    ("local-authority:CON", "Cornwall-council-site allocations DPD"),
+    ("local-authority:CHI", "southbourne-allocation-DPD"),
+    ("national-park-authority:Q72617988", "peak-district-national-park-authority-local-plan-dmp-2019"),
+    ("local-authority:REI", "reigate-and-banstead-borough-council-local-plan-2012"),
+    ("local-authority:SHR", "Adopted Site Allocations and Management of Development (SAMDev) Plan"),
+]
+
 # the wide layout always shows at least this many REVISION columns, adding more when an entity
 # has been revised more often
 MIN_REVISION_COLUMNS = 2
+
+GATEWAY_1_EVENT = "gateway-1-self-assessment"
+ADOPTION_EVENT = "adopted"
+
+# plans are expected to be adopted within this long of Gateway 1 - counted in calendar months, as 30
+# months isn't a fixed number of days
+PLAN_MAKING_MONTHS = 30
 
 EVENT_DATE_FACTS_SQL = f"""
 SELECT fr.entity,
@@ -89,6 +129,14 @@ FROM entity
 ORDER BY entity
 """
 
+PLANS_SQL = """
+SELECT reference,
+       name,
+       organisation_entity
+FROM entity
+ORDER BY entity
+"""
+
 # start_date on the digital-land resource table is the date the resource was first collected.
 # plan-timetable's own dataset_resource.start_date is empty, so it can't be used instead.
 RESOURCE_COLLECTED_SQL = """
@@ -104,7 +152,9 @@ LONG_COLUMNS = [
     "reference",
     "organisation",
     "organisation_name",
+    "ons_code",
     "plan",
+    "plan_type",
     "plan_event",
     "entry_date",
     "previous_event_date",
@@ -112,12 +162,93 @@ LONG_COLUMNS = [
     "direction",
     "days_moved",
     "status",
+    "actual_date",
     "notes",
 ]
 
 FACT_ORDER = ["entity", "entry_date", "collected_date", "entry_number"]
 
 NO_EVENT_DATE = "no event-date"
+
+
+def ons_codes(organisations: pd.DataFrame) -> pd.Series:
+    """
+    The ONS code of each organisation. Joint planning groups have none of their own, so they get
+    their members' codes separated by semicolons.
+    """
+    codes = organisations.set_index("organisation")["statistical_geography"].dropna()
+
+    def ons_code(organisation):
+        if pd.notna(organisation["statistical_geography"]):
+            return organisation["statistical_geography"]
+        members = organisation["organisations"].split(";") if pd.notna(organisation["organisations"]) else []
+        return ";".join(codes[member] for member in members if member in codes) or None
+
+    return organisations.apply(ons_code, axis=1)
+
+
+def plan_key(value: str) -> str:
+    """A plan reference or name without the case, spaces and punctuation publishers vary."""
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def plan_types(entities: pd.DataFrame, plans: pd.DataFrame) -> pd.Series:
+    """
+    The plan datasets each entity's plan appears in, separated by semicolons, as one plan can be a
+    local, minerals and waste plan all at once. Where it isn't in any, a plan whose reference says
+    it's a local plan and doesn't mention minerals or waste is an inferred local plan, and anything
+    else is unknown.
+
+    plans needs reference, name, organisation_entity and dataset. Publishers don't always use the
+    plan's reference, so a plan is first looked for among the organisation's own by reference or
+    name, ignoring case, spaces and punctuation. Joint plans may only be published by another of
+    the authorities, so failing that the exact reference is looked for anywhere.
+    """
+    own_plans = {}
+    any_plans = {}
+    for plan in plans.itertuples():
+        any_plans.setdefault(plan.reference, set()).add(plan.dataset)
+        for value in (plan.reference, plan.name):
+            if pd.notna(value):
+                own_plans.setdefault((plan.organisation_entity, plan_key(value)), set()).add(plan.dataset)
+
+    def plan_type(entity):
+        if pd.isna(entity["plan"]):
+            return UNKNOWN_PLAN_TYPE
+        own = own_plans.get((entity["organisation_entity"], plan_key(entity["plan"])))
+        datasets = own or any_plans.get(entity["plan"], set())
+        if datasets:
+            return ";".join(dataset for dataset in PLAN_DATASETS if dataset in datasets)
+        key = plan_key(entity["plan"])
+        if "localplan" in key and "mineral" not in key and "waste" not in key:
+            return INFERRED_LOCAL_PLAN
+        return UNKNOWN_PLAN_TYPE
+
+    return entities.apply(plan_type, axis=1)
+
+
+def exclusion_reasons(entities: pd.DataFrame) -> pd.Series:
+    """
+    Why each entity is left out of the reports, or blank if it belongs in them.
+
+    entities needs organisation, ons_code, plan and plan_type. A plan of unknown type is kept, as
+    most are local plans whose timetable doesn't use the plan's reference - a plan is never left
+    out because of its name alone.
+    """
+    def exclusion_reason(entity):
+        if entity["organisation"] in EXCLUDED_ORGANISATIONS:
+            return "excluded organisation"
+        if (entity["organisation"], entity["plan"]) in EXCLUDED_PLANS:
+            return "excluded plan"
+        if not {LOCAL_PLAN, INFERRED_LOCAL_PLAN, UNKNOWN_PLAN_TYPE} & set(entity["plan_type"].split(";")):
+            return "not a local plan"
+        if pd.notna(entity["ons_code"]) and all(
+            code.startswith(COUNTY_ONS_PREFIX) for code in entity["ons_code"].split(";")
+        ):
+            return "county council"
+        return ""
+
+    return entities.apply(exclusion_reason, axis=1)
 
 
 def order_facts(facts: pd.DataFrame) -> pd.DataFrame:
@@ -248,6 +379,57 @@ def build_event_date_timetable(
     return timetable.join(entry_date).join(current).reset_index()
 
 
+def timetable_date_columns(timetable: pd.DataFrame) -> list:
+    return [column for column in timetable.columns if column == "FIRST" or column.startswith("REVISION ")]
+
+
+def build_plan_durations(timetable: pd.DataFrame) -> pd.DataFrame:
+    """
+    One row per organisation and plan with a Gateway 1 or adoption event: how long from Gateway 1
+    to the adoption date currently predicted, both from when Gateway 1 actually happened and from
+    when it was first predicted to - so moving Gateway 1 doesn't hide how long a plan is taking.
+
+    timetable is the wide layout. Dates and durations are blank where the timetable doesn't have
+    them. Whether a plan is within 30 months is also blank if adoption isn't after Gateway 1, as
+    one of the dates must be wrong.
+    """
+    plan_columns = ["organisation", "organisation-name", "ons-code", "plan", "plan-type"]
+    events = timetable[timetable["plan-event"].isin([GATEWAY_1_EVENT, ADOPTION_EVENT]) & timetable["plan"].notna()]
+    events = events.assign(current=events[timetable_date_columns(events)].ffill(axis=1).iloc[:, -1])
+    # an event given a new reference is a new entity, so a plan could have more than one: its first
+    # prediction is the oldest entity's and its current dates are the newest's
+    events = events.sort_values(["entry-date", "entity"])
+
+    def event_dates(event, columns):
+        dates = events[events["plan-event"] == event].groupby(["organisation", "plan"]).agg(**columns)
+        return dates.reset_index()
+
+    durations = events[plan_columns].drop_duplicates(["organisation", "plan"], keep="last")
+    durations = durations.merge(
+        event_dates(GATEWAY_1_EVENT, {
+            "gateway-1-first-predicted": ("FIRST", "first"),
+            "gateway-1-current-predicted": ("current", "last"),
+            "gateway-1-actual": ("actual-date", "last"),
+        }),
+        on=["organisation", "plan"],
+        how="left",
+    ).merge(
+        event_dates(ADOPTION_EVENT, {"adoption-current-predicted": ("current", "last")}),
+        on=["organisation", "plan"],
+        how="left",
+    )
+
+    adoption = pd.to_datetime(durations["adoption-current-predicted"])
+    for start in ["gateway-1-actual", "gateway-1-first-predicted"]:
+        gateway_1 = pd.to_datetime(durations[start])
+        days = (adoption - gateway_1).dt.days.astype("Int64")
+        durations[f"days-{start}-to-adoption"] = days
+        within = (adoption <= gateway_1 + pd.DateOffset(months=PLAN_MAKING_MONTHS)).map({True: "yes", False: "no"})
+        durations[f"{start}-within-{PLAN_MAKING_MONTHS}-months"] = within.where((days > 0).fillna(False), None)
+
+    return durations.sort_values(["organisation-name", "plan"]).reset_index(drop=True)
+
+
 def main(output_dir: str):
     logger.info("Fetching authoritative plan-timetable event-date facts...")
     facts = datasette_query_paginated("plan-timetable", EVENT_DATE_FACTS_SQL)
@@ -276,20 +458,35 @@ def main(output_dir: str):
 
     entities = datasette_query_paginated("plan-timetable", ENTITY_SQL)
     entities["organisation_entity"] = pd.to_numeric(entities["organisation_entity"], errors="coerce").astype("Int64")
-    organisations = fetch_datasette_csv_table("organisation", low_memory=False)[["entity", "organisation", "name"]]
+    organisations = fetch_datasette_csv_table("organisation", low_memory=False)
+    organisations["ons_code"] = ons_codes(organisations)
+    organisations = organisations[["entity", "organisation", "name", "ons_code"]]
     organisations = organisations.rename(columns={"entity": "organisation_entity", "name": "organisation_name"})
     organisations["organisation_entity"] = organisations["organisation_entity"].astype("Int64")
     entities = entities.merge(organisations, on="organisation_entity", how="left")
 
-    authoritative = datasette_query_paginated("plan-timetable", AUTHORITATIVE_ENTITIES_SQL)
-    excluded_entities = entities.loc[entities["organisation"].isin(EXCLUDED_ORGANISATIONS), "entity"]
-    logger.info(
-        f"Excluding {authoritative['entity'].isin(excluded_entities).sum()} plan events owned by "
-        f"{EXCLUDED_ORGANISATIONS}"
+    plans = pd.concat(
+        [datasette_query_paginated(dataset, PLANS_SQL).assign(dataset=dataset) for dataset in PLAN_DATASETS],
+        ignore_index=True,
     )
-    authoritative = authoritative[~authoritative["entity"].isin(excluded_entities)]
-    facts = facts[~facts["entity"].isin(excluded_entities)]
-    line_facts = line_facts[~line_facts["entity"].isin(excluded_entities)]
+    plans["organisation_entity"] = pd.to_numeric(plans["organisation_entity"], errors="coerce").astype("Int64")
+
+    authoritative = datasette_query_paginated("plan-timetable", AUTHORITATIVE_ENTITIES_SQL)
+    entities = entities[entities["entity"].isin(authoritative["entity"])].copy()
+    entities["plan_type"] = plan_types(entities, plans)
+
+    reasons = exclusion_reasons(entities)
+    for reason, count in reasons[reasons != ""].value_counts().items():
+        logger.info(f"Excluding {count} plan events: {reason}")
+    published_plans = set(zip(entities["organisation"], entities["plan"]))
+    for excluded_plan in EXCLUDED_PLANS:
+        if excluded_plan not in published_plans:
+            logger.warning(f"Excluded plan {excluded_plan} no longer matches any plan events")
+
+    entities = entities[reasons == ""]
+    authoritative = authoritative[authoritative["entity"].isin(entities["entity"])]
+    facts = facts[facts["entity"].isin(entities["entity"])]
+    line_facts = line_facts[line_facts["entity"].isin(entities["entity"])]
 
     undated = authoritative[~authoritative["entity"].isin(facts["entity"])]
     undated = undated.merge(current_line_fields(line_facts)[["notes"]], left_on="entity", right_index=True, how="left")
@@ -297,10 +494,12 @@ def main(output_dir: str):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    history = build_event_date_history(facts, undated).merge(
-        entities[["entity", "reference", "organisation", "organisation_name", "plan", "plan_event"]],
-        on="entity",
-        how="left",
+    entity_columns = [
+        "entity", "reference", "organisation", "organisation_name", "ons_code", "plan", "plan_type", "plan_event"
+    ]
+    history = build_event_date_history(facts, undated).merge(entities[entity_columns], on="entity", how="left")
+    history = history.merge(
+        current_line_fields(line_facts)[["actual_date"]], left_on="entity", right_index=True, how="left"
     )
     # mergesort is stable, keeping the history's within-entry-date order
     history = history.sort_values(["entity", "entry_date"], kind="mergesort")[LONG_COLUMNS]
@@ -313,16 +512,13 @@ def main(output_dir: str):
     )
 
     timetable = build_event_date_timetable(facts, line_facts, undated).merge(
-        entities[["entity", "reference", "organisation", "organisation_name", "plan", "plan_event"]].rename(
-            columns={"organisation_name": "organisation-name", "plan_event": "plan-event"}
-        ),
+        entities[entity_columns].rename(columns=lambda column: column.replace("_", "-")),
         on="entity",
         how="left",
     ).sort_values("entity")
-    revisions = [column for column in timetable.columns if column == "FIRST" or column.startswith("REVISION ")]
     timetable = timetable[
-        ["entity", "reference", "organisation", "organisation-name", "plan", "plan-event"]
-        + revisions
+        [column.replace("_", "-") for column in entity_columns]
+        + timetable_date_columns(timetable)
         + ["entry-date", "actual-date", "notes"]
     ]
     wide_file = os.path.join(output_dir, WIDE_OUTPUT_FILE)
@@ -331,6 +527,11 @@ def main(output_dir: str):
         f"Saved {wide_file}: {len(timetable)} plan events, "
         f"{timetable['REVISION 1'].notna().sum()} with a revised event-date"
     )
+
+    durations = build_plan_durations(timetable)
+    durations_file = os.path.join(output_dir, PLAN_DURATION_OUTPUT_FILE)
+    durations.to_csv(durations_file, index=False)
+    logger.info(f"Saved {durations_file}: {len(durations)} plans")
 
 
 def parse_args():
