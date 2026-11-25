@@ -87,13 +87,19 @@ def get_with_retry(session: requests.Session, url: str, params: dict = None) -> 
     return response
 
 
-def task_url() -> str:
-    """Where to read task.csv from: straight from S3 in the pipeline, so the CDN cache can't
-    serve an old copy, or the public files CDN for local runs."""
+def files_url(path: str) -> str:
+    """Where to read a published file from. path is its key in the collection-data bucket,
+    e.g. "dataset/task.csv", which the files CDN serves at the same path. In the pipeline
+    this reads straight from S3 so the CDN cache can't serve an old copy; local runs
+    without COLLECTION_DATA_BUCKET use the public files CDN."""
     bucket = os.environ.get("COLLECTION_DATA_BUCKET")
     if bucket:
-        return f"s3://{bucket}/dataset/task.csv"
-    return f"{FILES_URL}/dataset/task.csv"
+        return f"s3://{bucket}/{path}"
+    return f"{FILES_URL}/{path}"
+
+
+def task_url() -> str:
+    return files_url("dataset/task.csv")
 
 
 def read_csv_with_retry(url: str, **kwargs) -> pd.DataFrame:

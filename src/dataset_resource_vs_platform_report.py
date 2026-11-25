@@ -6,14 +6,16 @@ Outputs:
 - dataset_resource_vs_platform_odp_summary.csv: platform vs dataset_resource comparison
 """
 
+import aiohttp
 import os
 import csv
+import fsspec
 import json
 import argparse
 from collections import defaultdict
 from io import StringIO
 
-from utils import get_http_session
+from utils import get_http_session, files_url
 
 csv.field_size_limit(10 * 1024 * 1024)
 
@@ -31,7 +33,6 @@ DATASETS = [
 ]
 
 DATASETTE_BASE = "https://datasette.planning.data.gov.uk"
-FILES_BASE = "https://files.planning.data.gov.uk"
 
 
 def _to_float(val):
@@ -273,8 +274,14 @@ def fetch_organisation_lookup(session):
     print(f"Fetched {len(lookup)} organisations")
     return lookup
 
+def open_options(location: str) -> dict:
+    "S3 options go to botocore, and HTTP options go to aiohttp"
+    if location.startswith("s3://"):
+        return {"config_kwargs": {"read_timeout": 120, "retries": {"max_attempts": 5}}}
+    return {"client_kwargs": {"timeout": aiohttp.ClientTimeout(sock_read=120)}}
 
-def fetch_platform_data_and_count(session, org_lookup):
+
+def fetch_platform_data_and_count(org_lookup):
     """
     For each dataset, fetch the platform CSV and count entities per (dataset, name, organisation).
     Entities with quality "some" are excluded from the count.
@@ -282,23 +289,21 @@ def fetch_platform_data_and_count(session, org_lookup):
     counts = defaultdict(int)
 
     for dataset in DATASETS:
-        url = f"{FILES_BASE}/dataset/{dataset}.csv"
+        location = files_url(f"dataset/{dataset}.csv")
         print(f"Fetching platform data for {dataset}...")
-        response = session.get(url, timeout=300, stream=True)
-        response.raise_for_status()
-
-        reader = csv.DictReader(response.iter_lines(decode_unicode=True))
-        row_count = 0
-        for row in reader:
-            if row.get("quality", "") == "some":
-                continue
-            org_entity = row.get("organisation-entity", "")
-            org_info = org_lookup.get(org_entity, {})
-            org_name = org_info.get("organisation-name", "")
-            org_code = org_info.get("organisation-code", "")
-            counts[(dataset, org_name, org_code)] += 1
-            row_count += 1
-        print(f"  {dataset}: {row_count} entities")
+        with fsspec.open(location, "rt", encoding="utf-8", newline="",**open_options(location)) as f:
+            reader = csv.DictReader(f)
+            row_count = 0
+            for row in reader:
+                if row.get("quality", "") == "some":
+                    continue
+                org_entity = row.get("organisation-entity", "")
+                org_info = org_lookup.get(org_entity, {})
+                org_name = org_info.get("organisation-name", "")
+                org_code = org_info.get("organisation-code", "")
+                counts[(dataset, org_name, org_code)] += 1
+                row_count += 1
+            print(f"  {dataset}: {row_count} entities")
 
     result = []
     for (dataset, name, organisation), count in counts.items():
@@ -384,7 +389,7 @@ def main(output_dir):
 
     # Fetch platform data and count entities
     org_lookup = fetch_organisation_lookup(session)
-    platform_counts = fetch_platform_data_and_count(session, org_lookup)
+    platform_counts = fetch_platform_data_and_count(org_lookup)
 
     # Merge and compute ratio
     final_summary = outer_merge_and_compute_ratio(platform_counts, summary_counts, status_lookup)
