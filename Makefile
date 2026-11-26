@@ -40,6 +40,9 @@ data/reporting/endpoint_dataset_issue_type_summary.csv: data/reporting
 data/reporting/all_endpoints_and_documentation_urls.csv: data/reporting
 	python src/endpoints_missing_doc_urls.py --output-dir data/reporting
 
+data/reporting/entities_conflicting_organisations.csv: data/reporting
+	python src/entities_conflicting_organisations.py --output-dir data/reporting
+
 # produces two files but leave for now
 data/reporting/flag_endpoints_no_provision.csv: data/reporting
 	python src/flag_endpoints_no_provison.py --output-dir data/reporting
@@ -104,6 +107,7 @@ all: data/reporting/deleted_entities.csv \
 	data/reporting/duplicate_entity_expectation.csv \
 	data/reporting/endpoint_dataset_issue_type_summary.csv \
 	data/reporting/all_endpoints_and_documentation_urls.csv \
+	data/reporting/entities_conflicting_organisations.csv \
 	data/reporting/flag_endpoints_no_provision.csv \
 	data/reporting/flagged_failed_resources.csv \
 	data/reporting/odp_issue.csv \
