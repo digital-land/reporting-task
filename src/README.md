@@ -131,6 +131,29 @@ Reports on endpoints missing a documentation URL, with summary statistics printe
 
 ---
 
+### entities_conflicting_organisations.py
+
+Flags entities with facts from two or more active LPAs. These usually come from our own config rather than the LPAs' data, so this is for internal monitoring.
+
+**What it does:**
+
+- Compares active LPAs only (anything with a `local_planning_authority` code, including national parks). Organisations with an `end_date` are ignored, so councils merged by local government reorganisation don't count
+- Leaves out counties, combined authorities and the GLA, as their regional registers overlap LPA data by design and every case found was historic. This means a district's file registered to its county by mistake wouldn't be caught. Government bodies such as Historic England are also out of scope, as their national data is expected to overlap with LPAs'
+- Finds each LPA's files per dataset from `resource_organisation` and `resource_dataset`, for published datasets with two or more LPAs. Files registered to several active organisations, including non-LPAs such as the GLA, are left out, as they can't show who supplied a fact
+- Queries `fact_resource` for the entities each organisation has facts for, in batches of files. `fact_resource` has redirects applied, so entities that were redirected into one another are included
+- Reports entities with facts from more than one LPA, sorted by dataset and entity
+- For each one, adds the entity's name, reference and current organisation, each organisation's latest file and whether it is still current (`organisation_files`), any old entities redirected into it (from `old_entity`), and a `likely_cause` from the dataset's `lookup.csv`:
+  - `redirect from another organisation's entity` — an organisation's lookup is only for an old entity that was redirected into this one
+  - `file registered to an organisation with no lookup for this entity` — usually a source registered to the wrong organisation
+  - `each organisation has a lookup for this entity`
+- Takes around 15 minutes, most of it the `fact_resource` queries
+
+**Output:** `entities_conflicting_organisations.csv`
+
+**Run:** `python src/entities_conflicting_organisations.py --output-dir <directory>` (or `python3` depending on your system setup)
+
+---
+
 ### flag_endpoints_no_provison.py
 
 Identifies active endpoints that don't correspond to any expected dataset provision.
